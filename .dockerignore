@@ -1,0 +1,16 @@
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+data
+bin
+node_modules
+coverage
+*.db
+*.db-wal
+*.db-shm
+*.log
+.DS_Store
+.idea
+.vscode

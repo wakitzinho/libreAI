@@ -1,0 +1,59 @@
+[Unit]
+Description=libreAI lightweight self-hosted AI chat
+Documentation=file:///usr/local/share/doc/libreai/README.md
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=libreai
+Group=libreai
+WorkingDirectory=/var/lib/libreai
+ExecStart=/usr/local/bin/libreai -env /etc/libreai/libreai.env
+Restart=on-failure
+RestartSec=3s
+TimeoutStopSec=25s
+
+# The package/sysusers file creates this unprivileged account. StateDirectory
+# creates /var/lib/libreai with the right ownership and persists user data.
+StateDirectory=libreai
+StateDirectoryMode=0700
+UMask=0077
+
+# journald receives structured, non-sensitive logs.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=libreai
+
+# Hardening. The application only needs to read /etc/libreai/libreai.env,
+# write its SQLite database under /var/lib/libreai, and make outbound TCP
+# connections to configured providers.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectClock=true
+ProtectHostname=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ReadWritePaths=/var/lib/libreai
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+LimitNOFILE=1024
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target

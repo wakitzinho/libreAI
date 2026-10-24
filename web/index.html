@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="en" data-theme="mocha">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1e1e2e">
+  <meta name="color-scheme" content="dark light">
+  <meta name="description" content="libreAI — a lightweight, self-hosted AI chat interface.">
+  <title>libreAI</title>
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+  <svg class="icon-sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="icon-menu" viewBox="0 0 24 24">
+      <path d="M4 7h16M4 12h16M4 17h16"/>
+    </symbol>
+    <symbol id="icon-close" viewBox="0 0 24 24">
+      <path d="M6 6l12 12M18 6L6 18"/>
+    </symbol>
+    <symbol id="icon-plus" viewBox="0 0 24 24">
+      <path d="M12 5v14M5 12h14"/>
+    </symbol>
+    <symbol id="icon-search" viewBox="0 0 24 24">
+      <circle cx="10.5" cy="10.5" r="6.5"/>
+      <path d="M15.5 15.5L20 20"/>
+    </symbol>
+    <symbol id="icon-settings" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="3"/>
+      <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6h.09A1.7 1.7 0 0 0 10 3.05V3a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15 4.6a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9v.09A1.7 1.7 0 0 0 20.95 10H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1Z"/>
+    </symbol>
+    <symbol id="icon-sun" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="4"/>
+      <path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41"/>
+    </symbol>
+    <symbol id="icon-moon" viewBox="0 0 24 24">
+      <path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11Z"/>
+    </symbol>
+    <symbol id="icon-send" viewBox="0 0 24 24">
+      <path d="M12 19V5M6 11l6-6 6 6"/>
+    </symbol>
+    <symbol id="icon-stop" viewBox="0 0 24 24">
+      <rect x="7" y="7" width="10" height="10" rx="1.5"/>
+    </symbol>
+    <symbol id="icon-dots" viewBox="0 0 24 24">
+      <circle cx="5" cy="12" r="1.4" fill="currentColor" stroke="none"/>
+      <circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/>
+      <circle cx="19" cy="12" r="1.4" fill="currentColor" stroke="none"/>
+    </symbol>
+    <symbol id="icon-chevron-right" viewBox="0 0 24 24">
+      <path d="M9 6l6 6-6 6"/>
+    </symbol>
+    <symbol id="icon-folder" viewBox="0 0 24 24">
+      <path d="M3.5 7.5A1.5 1.5 0 0 1 5 6h4l2 2h8a1.5 1.5 0 0 1 1.5 1.5v8A1.5 1.5 0 0 1 19 19H5a1.5 1.5 0 0 1-1.5-1.5Z"/>
+    </symbol>
+    <symbol id="icon-copy" viewBox="0 0 24 24">
+      <rect x="9" y="9" width="11" height="11" rx="2"/>
+      <path d="M5 15V6a2 2 0 0 1 2-2h9"/>
+    </symbol>
+    <symbol id="icon-edit" viewBox="0 0 24 24">
+      <path d="M4 20h4l10-10a2.83 2.83 0 1 0-4-4L4 16v4Z"/>
+      <path d="M13.5 6.5l4 4"/>
+    </symbol>
+    <symbol id="icon-refresh" viewBox="0 0 24 24">
+      <path d="M20 11a8 8 0 1 0-2.34 5.66"/>
+      <path d="M20 4v7h-7"/>
+    </symbol>
+    <symbol id="icon-spark" viewBox="0 0 24 24">
+      <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9Z"/>
+      <path d="M18.5 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8Z"/>
+    </symbol>
+  </svg>
+
+  <div id="app" class="app">
+    <div id="backdrop" class="backdrop" hidden></div>
+
+    <aside id="sidebar" class="sidebar" aria-label="Chats and projects">
+      <div class="sidebar-head">
+        <a class="brand" href="/" aria-label="libreAI home">
+          <span class="brand-mark"><svg class="icon" aria-hidden="true"><use href="#icon-spark"></use></svg></span>
+          <span class="brand-text">libre<span>AI</span></span>
+        </a>
+        <button id="sidebar-close" class="icon-btn sidebar-close" type="button" aria-label="Close sidebar" title="Close sidebar">
+          <svg class="icon" aria-hidden="true"><use href="#icon-close"></use></svg>
+        </button>
+      </div>
+
+      <div class="sidebar-actions">
+        <button id="new-chat" class="new-chat" type="button">
+          <svg class="icon" aria-hidden="true"><use href="#icon-plus"></use></svg>
+          <span>New chat</span>
+        </button>
+        <button id="new-project" class="icon-btn" type="button" aria-label="New project" title="New project">
+          <svg class="icon" aria-hidden="true"><use href="#icon-folder"></use></svg>
+          <svg class="icon icon-plus-badge" aria-hidden="true"><use href="#icon-plus"></use></svg>
+        </button>
+      </div>
+
+      <div class="sidebar-search">
+        <svg class="icon search-icon" aria-hidden="true"><use href="#icon-search"></use></svg>
+        <label class="sr-only" for="chat-search">Search chats</label>
+        <input id="chat-search" type="search" placeholder="Search chats" autocomplete="off" spellcheck="false">
+      </div>
+
+      <nav class="sidebar-scroll" aria-label="Conversations">
+        <section class="sidebar-section" aria-labelledby="projects-heading">
+          <h2 id="projects-heading" class="sidebar-heading">Projects</h2>
+          <ul id="project-list" class="project-list"></ul>
+        </section>
+        <section class="sidebar-section" aria-labelledby="chats-heading">
+          <h2 id="chats-heading" class="sidebar-heading">Chats</h2>
+          <ul id="chat-list" class="chat-list"></ul>
+          <p id="chat-empty" class="sidebar-empty" hidden>No chats yet.</p>
+        </section>
+      </nav>
+
+      <div class="sidebar-foot">
+        <div class="sidebar-foot-row">
+          <button id="sidebar-settings" class="sidebar-settings" type="button">
+            <svg class="icon" aria-hidden="true"><use href="#icon-settings"></use></svg>
+            <span>Settings</span>
+          </button>
+          <button id="theme-toggle" class="icon-btn" type="button" aria-label="Toggle theme" title="Toggle theme">
+            <svg class="icon" aria-hidden="true"><use href="#icon-sun"></use></svg>
+          </button>
+        </div>
+        <p class="retention-hint">Chats are deleted after <span id="retention-note">30</span> days of inactivity.</p>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <button id="sidebar-open" class="icon-btn topbar-menu" type="button" aria-label="Open sidebar" title="Open sidebar">
+          <svg class="icon" aria-hidden="true"><use href="#icon-menu"></use></svg>
+        </button>
+        <div class="topbar-title">
+          <h1 id="chat-title">libreAI</h1>
+        </div>
+        <div class="topbar-actions">
+          <label class="sr-only" for="model-select">Model</label>
+          <select id="model-select" class="model-select" disabled>
+            <option value="">No models available</option>
+          </select>
+          <button id="chat-menu-button" class="icon-btn" type="button" aria-label="Chat options" title="Chat options" hidden>
+            <svg class="icon" aria-hidden="true"><use href="#icon-dots"></use></svg>
+          </button>
+        </div>
+      </header>
+
+      <div id="provider-hint" class="provider-hint" hidden>
+        <strong>No AI provider is ready.</strong>
+        Add an API key to <code>.env</code>, restart libreAI, then choose a model.
+        See the README for provider configuration.
+      </div>
+
+      <section id="conversation" class="conversation" aria-label="Conversation">
+        <div id="messages" class="messages" aria-live="polite" hidden></div>
+
+        <div id="empty-state" class="empty-state">
+          <div class="empty-mark"><svg class="icon" aria-hidden="true"><use href="#icon-spark"></use></svg></div>
+          <h2>What can I help with?</h2>
+          <p>Ask a question, sketch an idea, or debug something. Conversations are stored on your server and deleted after <span id="empty-retention-note">30</span> days of inactivity.</p>
+          <div class="suggestions">
+            <button type="button" class="suggestion" data-suggestion="Explain how SQLite WAL mode works, and when I should not use it.">
+              <span class="suggestion-title">Explain a database</span>
+              <span class="suggestion-text">How SQLite WAL mode works and when not to use it</span>
+            </button>
+            <button type="button" class="suggestion" data-suggestion="Help me write a hardened systemd unit for a small Go HTTP service running as an unprivileged user.">
+              <span class="suggestion-title">Write a systemd unit</span>
+              <span class="suggestion-text">Harden a small Go service with systemd</span>
+            </button>
+            <button type="button" class="suggestion" data-suggestion="Review this Go function for race conditions and suggest a minimal fix:\n\nfunc (s *Server) active(id string) bool {\n    _, ok := s.active[id]\n    return ok\n}">
+              <span class="suggestion-title">Find a bug</span>
+              <span class="suggestion-text">Review a Go function for race conditions</span>
+            </button>
+            <button type="button" class="suggestion" data-suggestion="Draft a short, friendly email declining a meeting while keeping the relationship warm.">
+              <span class="suggestion-title">Draft an email</span>
+              <span class="suggestion-text">Decline a meeting politely</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <div class="composer-wrap">
+        <form id="composer-form" class="composer">
+          <label class="sr-only" for="composer-input">Message libreAI</label>
+          <textarea id="composer-input" class="composer-input" rows="1" placeholder="Message libreAI…" spellcheck="true"></textarea>
+          <div class="composer-bar">
+            <span class="composer-hint">Enter to send · Shift + Enter for a new line</span>
+            <button id="send-button" class="send-button" type="submit" aria-label="Send message" title="Send message" disabled>
+              <svg class="icon" aria-hidden="true"><use href="#icon-send"></use></svg>
+            </button>
+            <button id="stop-button" class="send-button stop-button" type="button" hidden>
+              <svg class="icon" aria-hidden="true"><use href="#icon-stop"></use></svg>
+              <span>Stop</span>
+            </button>
+          </div>
+        </form>
+        <p class="composer-note">libreAI can make mistakes. Check important information.</p>
+      </div>
+
+      <div id="toasts" class="toasts" aria-live="polite" aria-atomic="false"></div>
+    </main>
+  </div>
+
+  <div id="boot-error" class="boot-error" role="alert" hidden>
+    <div class="boot-error-card">
+      <h2>Cannot reach libreAI</h2>
+      <p id="boot-error-message">The libreAI server could not be reached.</p>
+      <button id="retry-boot" class="btn primary" type="button">Retry</button>
+    </div>
+  </div>
+
+  <dialog id="settings-dialog" class="dialog settings-dialog" aria-labelledby="settings-title">
+    <div class="dialog-head">
+      <h2 id="settings-title">Settings</h2>
+      <button class="icon-btn" type="button" data-close aria-label="Close settings">
+        <svg class="icon" aria-hidden="true"><use href="#icon-close"></use></svg>
+      </button>
+    </div>
+    <div class="dialog-body settings-body">
+      <section class="settings-section">
+        <h3>Appearance</h3>
+        <p class="settings-help">Choose a Catppuccin theme. System follows your operating system preference.</p>
+        <div class="theme-choices">
+          <label class="theme-choice"><input type="radio" name="theme-choice" value="system"><span>System</span></label>
+          <label class="theme-choice"><input type="radio" name="theme-choice" value="dark"><span>Mocha (dark)</span></label>
+          <label class="theme-choice"><input type="radio" name="theme-choice" value="light"><span>Latte (light)</span></label>
+        </div>
+      </section>
+
+      <section class="settings-section">
+        <h3>Default model</h3>
+        <p class="settings-help">Used for new chats when no model has been chosen in the current chat.</p>
+        <div class="field-row">
+          <label class="field">
+            <span>Provider</span>
+            <select id="default-provider"></select>
+          </label>
+          <label class="field">
+            <span>Model</span>
+            <select id="default-model" disabled></select>
+          </label>
+        </div>
+        <div class="settings-inline">
+          <button id="refresh-models" class="btn secondary small" type="button">
+            <svg class="icon" aria-hidden="true"><use href="#icon-refresh"></use></svg>
+            Refresh models
+          </button>
+          <span id="model-refresh-status" class="settings-status" role="status"></span>
+        </div>
+      </section>
+
+      <section class="settings-section">
+        <h3>Model visibility</h3>
+        <p class="settings-help">Unchecked models are hidden from the chat model selector. This does not affect provider configuration.</p>
+        <div id="model-visibility" class="model-visibility"></div>
+      </section>
+
+      <section class="settings-section">
+        <h3>Providers</h3>
+        <p class="settings-help">Configuration is read from <code>.env</code> at startup. API keys are never sent to the browser.</p>
+        <div id="provider-status" class="provider-status"></div>
+      </section>
+
+      <section class="settings-section">
+        <h3>Data &amp; retention</h3>
+        <p class="settings-help">Chats inactive for <strong id="settings-retention">30</strong> days are deleted automatically. Opening or sending a message resets the timer. Deleting records is not a guarantee of forensic erasure from backups or SSD storage.</p>
+        <p class="settings-version">libreAI <span id="app-version">dev</span></p>
+      </section>
+    </div>
+    <div class="dialog-foot">
+      <button class="btn ghost" type="button" data-close>Cancel</button>
+      <button id="save-settings" class="btn primary" type="button">Save settings</button>
+    </div>
+  </dialog>
+
+  <dialog id="prompt-dialog" class="dialog prompt-dialog" aria-labelledby="prompt-title">
+    <form id="prompt-form">
+      <div class="dialog-head">
+        <h2 id="prompt-title">Rename</h2>
+        <button class="icon-btn" type="button" data-close aria-label="Cancel">
+          <svg class="icon" aria-hidden="true"><use href="#icon-close"></use></svg>
+        </button>
+      </div>
+      <div class="dialog-body">
+        <label id="prompt-label" class="field" for="prompt-input">
+          <span>Name</span>
+        </label>
+        <input id="prompt-input" class="text-input" type="text" maxlength="200" autocomplete="off" required>
+      </div>
+      <div class="dialog-foot">
+        <button class="btn ghost" type="button" data-close>Cancel</button>
+        <button id="prompt-ok" class="btn primary" type="submit">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="confirm-dialog" class="dialog confirm-dialog" aria-labelledby="confirm-title">
+    <div class="dialog-head">
+      <h2 id="confirm-title">Confirm</h2>
+      <button class="icon-btn" type="button" data-close aria-label="Cancel">
+        <svg class="icon" aria-hidden="true"><use href="#icon-close"></use></svg>
+      </button>
+    </div>
+    <div class="dialog-body">
+      <p id="confirm-message" class="confirm-message"></p>
+    </div>
+    <div class="dialog-foot">
+      <button class="btn ghost" type="button" data-close>Cancel</button>
+      <button id="confirm-ok" class="btn danger-solid" type="button">Delete</button>
+    </div>
+  </dialog>
+
+  <dialog id="move-dialog" class="dialog move-dialog" aria-labelledby="move-title">
+    <form id="move-form">
+      <div class="dialog-head">
+        <h2 id="move-title">Move chat</h2>
+        <button class="icon-btn" type="button" data-close aria-label="Cancel">
+          <svg class="icon" aria-hidden="true"><use href="#icon-close"></use></svg>
+        </button>
+      </div>
+      <div class="dialog-body">
+        <p class="dialog-lead">Move <strong id="move-chat-title"></strong> to a project.</p>
+        <label class="field" for="move-project">
+          <span>Project</span>
+          <select id="move-project"></select>
+        </label>
+      </div>
+      <div class="dialog-foot">
+        <button class="btn ghost" type="button" data-close>Cancel</button>
+        <button class="btn primary" type="submit">Move chat</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>

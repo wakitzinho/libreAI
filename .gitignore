@@ -1,0 +1,27 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+
+# Runtime data
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# Build output
+bin/
+libreai
+libreai-*
+dist/
+
+# Development artifacts
+node_modules/
+coverage/
+*.log
+.DS_Store
+
+# Editor/OS files
+.idea/
+.vscode/
+*.swp

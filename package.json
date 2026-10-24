@@ -1,0 +1,9 @@
+{
+  "name": "libreai",
+  "private": true,
+  "type": "module",
+  "description": "Browser assets and development-only frontend tests. The server does not use Node.js.",
+  "scripts": {
+    "test": "node --test tests/frontend/*.test.mjs"
+  }
+}

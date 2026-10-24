@@ -1,0 +1,43 @@
+# Optional Docker deployment. The native systemd/NixOS deployment has the
+# smallest footprint; see README.md.
+#
+# The container listens on 0.0.0.0 internally, but the host port is published
+# only on loopback. Put Tailscale Serve in front of 127.0.0.1:8080.
+
+services:
+  libreai:
+    build:
+      context: .
+      args:
+        VERSION: ${VERSION:-dev}
+    image: libreai:local
+    container_name: libreai
+    platform: linux/amd64
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8080"
+      DATABASE_PATH: /data/libreai.db
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - libreai-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    stop_grace_period: 20s
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/libreai", "-healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  libreai-data:
