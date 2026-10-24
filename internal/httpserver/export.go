@@ -42,7 +42,7 @@ func (s *Server) handleExportChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	providerName := chat.ProviderID
-	if p, ok := s.providers.Provider(chat.ProviderID); ok {
+	if p, ok := s.registry().Provider(chat.ProviderID); ok {
 		providerName = p.DisplayName
 	}
 	slug := fileNameSlug(chat.Title)

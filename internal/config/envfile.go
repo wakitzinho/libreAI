@@ -10,7 +10,9 @@ import (
 	"strings"
 )
 
-const maxEnvFileBytes = 1 << 20
+// MaxEnvFileBytes caps both files read at startup and files written through
+// the settings editor.
+const MaxEnvFileBytes = 1 << 20
 
 var envKeyPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
@@ -27,7 +29,7 @@ func parseEnvFile(path string) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	if info.Size() > maxEnvFileBytes {
+	if info.Size() > MaxEnvFileBytes {
 		return nil, fmt.Errorf("environment file %s is larger than 1 MiB", path)
 	}
 	return parseEnv(f)

@@ -44,7 +44,6 @@ const els = {
   composer: $('#composer-input'),
   send: $('#send-button'),
   stop: $('#stop-button'),
-  retentionNote: $('#retention-note'),
   emptyRetentionNote: $('#empty-retention-note'),
   bootError: $('#boot-error'),
   bootErrorMessage: $('#boot-error-message'),
@@ -59,6 +58,12 @@ const els = {
   settingsRetention: $('#settings-retention'),
   appVersion: $('#app-version'),
   saveSettings: $('#save-settings'),
+  envEditor: $('#env-editor'),
+  envPath: $('#env-path'),
+  envSave: $('#env-save'),
+  envReload: $('#env-reload'),
+  envStatus: $('#env-status'),
+  envSecretPlaceholder: $('#env-secret-placeholder'),
   themeChoices: document.querySelectorAll('input[name="theme-choice"]'),
   moveDialog: $('#move-dialog'),
   moveForm: $('#move-form'),
@@ -144,7 +149,6 @@ function applyBootstrap(data) {
     modelId: data.defaults?.model_id || '',
   };
   state.hidden = new Set(data.hidden_models || []);
-  els.retentionNote.textContent = String(state.retentionDays);
   els.emptyRetentionNote.textContent = String(state.retentionDays);
   els.settingsRetention.textContent = String(state.retentionDays);
   els.appVersion.textContent = state.version;
@@ -507,7 +511,73 @@ function showCurrentChatMenu(anchor) {
 function openSettings() {
   renderSettingsContent();
   settingsRendered = true;
+  if (els.settingsDialog.open) {
+    els.envEditor.focus();
+    return;
+  }
   els.settingsDialog.showModal();
+  loadEnvEditor();
+}
+
+let envLoading = false;
+
+async function loadEnvEditor() {
+  if (envLoading) return;
+  envLoading = true;
+  els.envEditor.disabled = true;
+  els.envSave.disabled = true;
+  els.envReload.disabled = true;
+  els.envPath.textContent = 'Loading configuration…';
+  els.envStatus.textContent = '';
+  try {
+    const data = await api.envFile();
+    els.envEditor.value = data.contents || '';
+    els.envPath.textContent = data.path || '.env';
+    els.envPath.title = data.path || '';
+    if (data.secret_placeholder) els.envSecretPlaceholder.textContent = data.secret_placeholder;
+    els.envEditor.disabled = false;
+    els.envSave.disabled = false;
+    els.envStatus.textContent = data.exists ? '' : 'The file does not exist yet; saving creates it.';
+  } catch (error) {
+    els.envEditor.value = '';
+    els.envPath.textContent = 'Configuration editor unavailable';
+    els.envPath.title = '';
+    els.envStatus.textContent = error.message || 'Could not load the configuration file.';
+    els.envEditor.disabled = true;
+    els.envSave.disabled = true;
+  } finally {
+    els.envReload.disabled = false;
+    envLoading = false;
+  }
+}
+
+async function saveEnvFile() {
+  if (els.envEditor.disabled) return;
+  els.envSave.disabled = true;
+  els.envReload.disabled = true;
+  els.envStatus.textContent = 'Saving…';
+  try {
+    const result = await api.saveEnvFile(els.envEditor.value);
+    if (result.providers) updateProviders(result.providers);
+    await loadEnvEditor();
+    if (result.restart_required) {
+      els.envStatus.textContent = 'Saved. Restart libreAI to apply server options.';
+      showToast('Configuration saved. Restart libreAI to apply server options.', 'info', 5000);
+    } else {
+      els.envStatus.textContent = 'Saved. Provider changes applied.';
+      showToast('Configuration saved. Provider changes applied.', 'info', 3000);
+    }
+    if (Array.isArray(result.warnings) && result.warnings.length) {
+      els.envStatus.textContent += ' ' + result.warnings.join(' ');
+    }
+    await refreshModels({ quiet: true });
+  } catch (error) {
+    els.envStatus.textContent = error.message || 'Could not save the configuration file.';
+    showToast(error.message || 'Could not save the configuration file.', 'error');
+  } finally {
+    els.envSave.disabled = els.envEditor.disabled;
+    els.envReload.disabled = false;
+  }
 }
 
 function renderSettingsContent() {
@@ -575,7 +645,7 @@ function renderSettingsContent() {
   if (!visibleProviders) {
     const empty = document.createElement('p');
     empty.className = 'hint';
-    empty.textContent = 'No models are available. Configure a provider in .env, restart libreAI, then refresh models.';
+    empty.textContent = 'No models are available. Configure a provider in .env, save it, then refresh models.';
     els.modelVisibility.appendChild(empty);
   }
 
@@ -584,7 +654,7 @@ function renderSettingsContent() {
   if (!state.providers.length) {
     const empty = document.createElement('p');
     empty.className = 'hint';
-    empty.textContent = 'No providers are configured. Copy .env.example to .env, add a key, and restart libreAI.';
+    empty.textContent = 'No providers are configured. Open the .env editor above, add a provider, and save.';
     els.providerStatus.appendChild(empty);
   }
   for (const provider of state.providers) {
@@ -684,17 +754,17 @@ async function saveSettings() {
   }
 }
 
-async function refreshModels() {
+async function refreshModels({ quiet = false } = {}) {
   els.refreshModels.disabled = true;
   els.refreshStatus.textContent = 'Refreshing…';
   try {
     const data = await api.refreshModels();
     updateProviders(data.providers || []);
     els.refreshStatus.textContent = 'Model lists updated.';
-    showToast('Model discovery refreshed.', 'info', 2600);
+    if (!quiet) showToast('Model discovery refreshed.', 'info', 2600);
   } catch (error) {
     els.refreshStatus.textContent = '';
-    showToast(error.message || 'Could not refresh models.', 'error');
+    if (!quiet) showToast(error.message || 'Could not refresh models.', 'error');
   } finally {
     els.refreshModels.disabled = false;
   }
@@ -796,7 +866,9 @@ function wireUI() {
   els.retryBoot.addEventListener('click', () => boot());
 
   els.saveSettings.addEventListener('click', saveSettings);
-  els.refreshModels.addEventListener('click', refreshModels);
+  els.refreshModels.addEventListener('click', () => refreshModels());
+  els.envSave.addEventListener('click', saveEnvFile);
+  els.envReload.addEventListener('click', loadEnvEditor);
   els.defaultProvider.addEventListener('change', () => {
     renderDefaultModels(els.defaultProvider.value, '');
   });

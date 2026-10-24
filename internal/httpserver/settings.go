@@ -74,9 +74,10 @@ func (s *Server) effectiveDefaults(ctx context.Context) (appSettings, error) {
 	if err != nil {
 		return appSettings{}, err
 	}
+	reg := s.registry()
 	if settings.DefaultProvider != "" {
-		if _, ok := s.providers.GetClient(settings.DefaultProvider); ok {
-			if settings.DefaultModel != "" && s.providers.ModelKnown(settings.DefaultProvider, settings.DefaultModel) {
+		if _, ok := reg.GetClient(settings.DefaultProvider); ok {
+			if settings.DefaultModel != "" && reg.ModelKnown(settings.DefaultProvider, settings.DefaultModel) {
 				return settings, nil
 			}
 		}
@@ -87,7 +88,7 @@ func (s *Server) effectiveDefaults(ctx context.Context) (appSettings, error) {
 	for _, h := range settings.HiddenModels {
 		hidden[h] = true
 	}
-	for _, info := range s.providers.Infos() {
+	for _, info := range reg.Infos() {
 		if !info.Configured {
 			continue
 		}
@@ -143,6 +144,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, err)
 		return
 	}
+	reg := s.registry()
 	if req.Defaults != nil {
 		pid := strings.ToLower(strings.TrimSpace(req.Defaults.ProviderID))
 		mid := strings.TrimSpace(req.Defaults.ModelID)
@@ -151,11 +153,11 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if pid != "" {
-			if _, ok := s.providers.GetClient(pid); !ok {
+			if _, ok := reg.GetClient(pid); !ok {
 				writeError(w, http.StatusBadRequest, "provider_unavailable", "That provider is not configured or enabled.")
 				return
 			}
-			if !s.providers.ModelKnown(pid, mid) {
+			if !reg.ModelKnown(pid, mid) {
 				writeError(w, http.StatusBadRequest, "model_unavailable", "That model is not currently known. Refresh models and try again.")
 				return
 			}
@@ -174,12 +176,13 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"providers": s.providers.Infos()})
+	writeJSON(w, http.StatusOK, map[string]any{"providers": s.registry().Infos()})
 }
 
 func (s *Server) handleRefreshModels(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
 	defer cancel()
-	s.providers.Refresh(ctx, true)
-	writeJSON(w, http.StatusOK, map[string]any{"providers": s.providers.Infos()})
+	reg := s.registry()
+	reg.Refresh(ctx, true)
+	writeJSON(w, http.StatusOK, map[string]any{"providers": reg.Infos()})
 }

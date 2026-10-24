@@ -99,6 +99,9 @@ type Config struct {
 	ShutdownTimeout          time.Duration
 	LogLevel                 string
 	Providers                []Provider
+	// EnvFile is the .env path this configuration was loaded from. It is used
+	// by the settings editor and is never exposed as a configurable value.
+	EnvFile string
 }
 
 // ListenAddr returns the address passed to net.Listen.
@@ -125,14 +128,45 @@ func Load(envFile string) (Config, []string, error) {
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return Config{}, nil, err
 	}
-	// Resolve shorthand variables per source so process-environment aliases
-	// still take precedence over values from the file.
+	cfg, warnings, err := FromMap(mergeEnvValues(fileValues))
+	if err != nil {
+		return Config{}, warnings, err
+	}
+	cfg.EnvFile = envFile
+	if info, statErr := os.Stat(envFile); statErr == nil {
+		perm := info.Mode().Perm()
+		if perm&0o007 != 0 || perm&0o030 != 0 {
+			warnings = append(warnings, fmt.Sprintf("%s is accessible by other users (mode %04o); recommend chmod 600, or root:libreai mode 0640 for systemd", envFile, perm))
+		}
+	}
+	return cfg, warnings, nil
+}
+
+// ValidateEnvFileContents checks a prospective .env file without writing it.
+// The process environment is overlaid just like Load, so validation matches
+// what the server would use after saving and restarting.
+func ValidateEnvFileContents(contents string) (Config, []string, error) {
+	if len(contents) > MaxEnvFileBytes {
+		return Config{}, nil, fmt.Errorf("environment file is larger than 1 MiB")
+	}
+	if strings.ContainsRune(contents, '\x00') {
+		return Config{}, nil, errors.New("environment file must not contain NUL bytes")
+	}
+	fileValues, err := parseEnv(strings.NewReader(contents))
+	if err != nil {
+		return Config{}, nil, err
+	}
+	return FromMap(mergeEnvValues(fileValues))
+}
+
+// mergeEnvValues applies provider aliases and overlays explicit process
+// environment variables on top of values from the .env file.
+func mergeEnvValues(fileValues map[string]string) map[string]string {
 	applyProviderAliases(fileValues)
 	values := make(map[string]string, len(fileValues)+16)
 	for k, v := range fileValues {
 		values[k] = v
 	}
-	// Explicit process environment overrides .env.
 	envValues := make(map[string]string)
 	for _, entry := range os.Environ() {
 		k, v, ok := strings.Cut(entry, "=")
@@ -144,17 +178,7 @@ func Load(envFile string) (Config, []string, error) {
 	for k, v := range envValues {
 		values[k] = v
 	}
-	cfg, warnings, err := FromMap(values)
-	if err != nil {
-		return Config{}, warnings, err
-	}
-	if info, statErr := os.Stat(envFile); statErr == nil {
-		perm := info.Mode().Perm()
-		if perm&0o007 != 0 || perm&0o030 != 0 {
-			warnings = append(warnings, fmt.Sprintf("%s is accessible by other users (mode %04o); recommend chmod 600, or root:libreai mode 0640 for systemd", envFile, perm))
-		}
-	}
-	return cfg, warnings, nil
+	return values
 }
 
 // FromMap builds a Config from a set of environment-style key/value pairs.

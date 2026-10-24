@@ -288,6 +288,22 @@ discovery.
 The settings dialog stores the default provider/model and hidden models in the
 database. Theme and sidebar preferences are browser-local (`localStorage`).
 
+### Editing `.env` from Settings
+
+The **Settings → Models & providers** editor loads the same `.env` file passed
+with `-env` (or `ENV_FILE`). Add or change `PROVIDER_*` variables there, then
+choose **Save .env**. Provider and manual model changes are applied immediately
+by swapping the in-memory provider registry. Server-level options such as
+`HOST`, `PORT`, `DATABASE_PATH`, and `CHAT_RETENTION_DAYS` still take effect
+only after a restart.
+
+Existing API keys and custom `HEADERS` values are replaced in the editor with
+`__LIBREAI_KEEP_SECRET__`. Leaving the placeholder unchanged preserves the
+secret on disk; replacing it stores the new value. This keeps existing
+credentials out of browser memory and API responses while still allowing a new
+key or provider to be added. Saves are validated first and written atomically
+with the existing file mode preserved (or `0600` for a new file).
+
 ## Using libreAI
 
 - **New chat** starts an unsaved chat; the first message creates/saves it.

@@ -19,7 +19,9 @@ Anyone who can reach the HTTP port can:
 - read, create, rename, move, export, and delete every project and chat;
 - send prompts through every configured provider;
 - consume the provider API quota and money associated with your API keys;
-- change default models and visibility settings.
+- change default models and visibility settings;
+- edit the configured `.env` file through the Settings editor, including adding
+  or replacing provider endpoints and API keys.
 
 Therefore:
 
@@ -41,9 +43,11 @@ encrypted.
 ## Built-in protections
 
 - **Server-side secrets.** Provider API keys are read only from the server
-  environment/.env file. They are never sent to the browser, embedded in HTML,
-  or returned by an API. Provider diagnostics omit keys and custom header
-  values, and known keys are redacted from logged errors.
+  environment/.env file. Existing keys and custom header values are masked in
+  the Settings editor and are never returned by an API. A user who can reach the
+  port can replace a key (but cannot read the current one) through the editor.
+  Provider diagnostics omit keys and custom header values, and known keys are
+  redacted from logged errors.
 - **Safe rendering.** Assistant and user Markdown is rendered by an allowlist
   renderer in the browser. Raw HTML is escaped, links are restricted to safe
   schemes, and there is no `innerHTML` use with unsanitized provider output.
@@ -76,7 +80,9 @@ encrypted.
 1. **Protect the environment file.** Keep it outside Git and use mode `0600`
    for a user-run process, or root-owned mode `0640` with group `libreai` for
    the systemd unit. The application warns at startup if the file is readable
-   or writable by users outside its intended owner/group.
+   or writable by users outside its intended owner/group. The Settings editor
+   writes this file, so a read-only deployment must make it or its directory
+   non-writable for the service account.
 2. **Protect the database.** Use full-disk encryption where available. A
    backup contains all chats and must be protected like the live database.
 3. **Protect the host.** Run the service as the supplied unprivileged user.

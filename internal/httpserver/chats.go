@@ -266,10 +266,11 @@ func (s *Server) validateSelection(providerID, modelID string) error {
 	if len(providerID) > 64 || len(modelID) > 200 {
 		return errors.New("Provider or model identifier is too long.")
 	}
-	if _, ok := s.providers.GetClient(providerID); !ok {
+	reg := s.registry()
+	if _, ok := reg.GetClient(providerID); !ok {
 		return errors.New("That provider is not configured or enabled.")
 	}
-	if !s.providers.ModelKnown(providerID, modelID) {
+	if !reg.ModelKnown(providerID, modelID) {
 		return errors.New("That model is not currently known. Refresh models in Settings or add it to PROVIDER_*_MODELS.")
 	}
 	return nil

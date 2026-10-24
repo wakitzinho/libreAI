@@ -133,7 +133,7 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 			newTitle := deriveTitle(titleSource)
 			changed, err := s.store.SetTitleIfDefault(r.Context(), chatID, newTitle, "New chat")
 			if err != nil {
-				s.logger.Warn("could not set chat title", "error", s.providers.Redact(err.Error()))
+				s.logger.Warn("could not set chat title", "error", s.registry().Redact(err.Error()))
 			} else if changed {
 				title = newTitle
 			}
@@ -190,15 +190,16 @@ func (s *Server) resolveSelection(ctx context.Context, chat store.Chat, req send
 		providerID, modelID = settings.DefaultProvider, settings.DefaultModel
 	}
 	if providerID == "" || modelID == "" {
-		return "", "", errors.New("No provider or model is selected. Configure a provider in .env, restart libreAI, and choose a model.")
+		return "", "", errors.New("No provider or model is selected. Configure a provider in Settings and choose a model.")
 	}
 	if len(providerID) > 64 || len(modelID) > 200 {
 		return "", "", errors.New("Provider or model identifier is too long.")
 	}
-	if _, ok := s.providers.GetClient(providerID); !ok {
-		return "", "", errors.New("The selected provider is not configured or enabled. Check .env and restart libreAI.")
+	reg := s.registry()
+	if _, ok := reg.GetClient(providerID); !ok {
+		return "", "", errors.New("The selected provider is not configured or enabled. Check the .env settings.")
 	}
-	if !s.providers.ModelKnown(providerID, modelID) {
+	if !reg.ModelKnown(providerID, modelID) {
 		return "", "", errors.New("The selected model is not currently known. Refresh models in Settings or add it to PROVIDER_*_MODELS.")
 	}
 	return providerID, modelID, nil
@@ -300,6 +301,7 @@ func (s *Server) finishChat(chatID string) {
 }
 
 func (s *Server) streamCompletion(w http.ResponseWriter, r *http.Request, chat store.Chat, assistant store.Message, messages []provider.ChatMessage, providerID, modelID string) {
+	reg := s.registry()
 	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache, no-transform")
 	w.Header().Set("X-Accel-Buffering", "no")
@@ -318,14 +320,14 @@ func (s *Server) streamCompletion(w http.ResponseWriter, r *http.Request, chat s
 		return
 	}
 
-	client, ok := s.providers.GetClient(providerID)
+	client, ok := reg.GetClient(providerID)
 	if !ok {
 		_ = writeSSE(w, rc, "error", map[string]any{"code": "provider_unavailable", "message": "Provider is no longer available.", "message_id": assistant.ID, "status": "error"})
 		s.persistFinal(assistant.ID, "", "error", "Provider is no longer available.")
 		return
 	}
 
-	timeout := s.providers.Timeout(providerID, s.cfg.UpstreamTimeout)
+	timeout := reg.Timeout(providerID, s.cfg.UpstreamTimeout)
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
 
@@ -373,7 +375,7 @@ func (s *Server) streamCompletion(w http.ResponseWriter, r *http.Request, chat s
 
 	if genErr != nil && status != "cancelled" {
 		s.logger.Warn("upstream generation failed", "provider", providerID, "model", modelID,
-			"error", s.providers.Redact(genErr.Error()))
+			"error", reg.Redact(genErr.Error()))
 	}
 
 	if !s.persistFinal(assistant.ID, text, status, errorMessage) {
@@ -404,7 +406,7 @@ func (s *Server) persistProgress(messageID int64, content string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 	defer cancel()
 	if err := s.store.UpdateMessage(ctx, messageID, content, "streaming", ""); err != nil {
-		s.logger.Warn("could not persist streaming progress", "error", s.providers.Redact(err.Error()))
+		s.logger.Warn("could not persist streaming progress", "error", s.registry().Redact(err.Error()))
 	}
 }
 
@@ -416,7 +418,7 @@ func (s *Server) persistFinal(messageID int64, content, status, errorMessage str
 		if err == nil {
 			return true
 		}
-		s.logger.Error("could not persist final assistant message", "attempt", attempt+1, "error", s.providers.Redact(err.Error()))
+		s.logger.Error("could not persist final assistant message", "attempt", attempt+1, "error", s.registry().Redact(err.Error()))
 		time.Sleep(150 * time.Millisecond)
 	}
 	return false

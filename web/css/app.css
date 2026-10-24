@@ -565,13 +565,6 @@ code {
   color: var(--text);
 }
 
-.retention-hint {
-  margin: 6px 9px 0;
-  color: var(--overlay0);
-  font-size: 11px;
-  line-height: 1.4;
-}
-
 /* ------------------------------------------------------------------------- */
 /* Topbar and main                                                           */
 /* ------------------------------------------------------------------------- */
@@ -1602,6 +1595,45 @@ html[data-theme="latte"] .dialog::backdrop {
   align-items: center;
   gap: 10px;
   margin-top: 10px;
+}
+
+.env-meta {
+  justify-content: space-between;
+  margin-top: 0;
+  margin-bottom: 7px;
+}
+
+.env-path {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+}
+
+.env-editor {
+  display: block;
+  width: 100%;
+  min-height: 230px;
+  max-height: 46dvh;
+  padding: 10px 11px;
+  border: 1px solid var(--surface1);
+  border-radius: var(--radius-sm);
+  background: var(--mantle);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+  tab-size: 2;
+  resize: vertical;
+}
+
+.env-editor:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.env-editor:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .settings-status {

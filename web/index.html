@@ -116,7 +116,7 @@
 
       <div class="sidebar-foot">
         <div class="sidebar-foot-row">
-          <button id="sidebar-settings" class="sidebar-settings" type="button">
+          <button id="sidebar-settings" class="sidebar-settings" type="button" aria-haspopup="dialog" title="Open settings">
             <svg class="icon" aria-hidden="true"><use href="#icon-settings"></use></svg>
             <span>Settings</span>
           </button>
@@ -124,7 +124,6 @@
             <svg class="icon" aria-hidden="true"><use href="#icon-sun"></use></svg>
           </button>
         </div>
-        <p class="retention-hint">Chats are deleted after <span id="retention-note">30</span> days of inactivity.</p>
       </div>
     </aside>
 
@@ -149,7 +148,7 @@
 
       <div id="provider-hint" class="provider-hint" hidden>
         <strong>No AI provider is ready.</strong>
-        Add an API key to <code>.env</code>, restart libreAI, then choose a model.
+        Add an API key in <strong>Settings → Models &amp; providers</strong>, save, then choose a model.
         See the README for provider configuration.
       </div>
 
@@ -220,6 +219,25 @@
     </div>
     <div class="dialog-body settings-body">
       <section class="settings-section">
+        <h3>Models &amp; providers (.env)</h3>
+        <p class="settings-help">
+          Add providers, API keys, and model IDs in <code>.env</code>. Existing secrets are masked as
+          <code id="env-secret-placeholder">__LIBREAI_KEEP_SECRET__</code>; leave that value unchanged to keep the current secret.
+          Provider changes apply immediately. Other options take effect after a restart, and process environment
+          variables override values in this file.
+        </p>
+        <div class="settings-inline env-meta">
+          <span id="env-path" class="settings-status env-path">Loading configuration…</span>
+          <button id="env-reload" class="btn ghost small" type="button">Reload</button>
+        </div>
+        <textarea id="env-editor" class="env-editor" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label=".env configuration" disabled></textarea>
+        <div class="settings-inline">
+          <button id="env-save" class="btn primary small" type="button" disabled>Save .env</button>
+          <span id="env-status" class="settings-status" role="status"></span>
+        </div>
+      </section>
+
+      <section class="settings-section">
         <h3>Appearance</h3>
         <p class="settings-help">Choose a Catppuccin theme. System follows your operating system preference.</p>
         <div class="theme-choices">
@@ -259,7 +277,7 @@
 
       <section class="settings-section">
         <h3>Providers</h3>
-        <p class="settings-help">Configuration is read from <code>.env</code> at startup. API keys are never sent to the browser.</p>
+        <p class="settings-help">Provider status after applying the current configuration. API keys are never sent to the browser.</p>
         <div id="provider-status" class="provider-status"></div>
       </section>
 
@@ -271,7 +289,7 @@
     </div>
     <div class="dialog-foot">
       <button class="btn ghost" type="button" data-close>Cancel</button>
-      <button id="save-settings" class="btn primary" type="button">Save settings</button>
+      <button id="save-settings" class="btn primary" type="button">Save preferences</button>
     </div>
   </dialog>
 

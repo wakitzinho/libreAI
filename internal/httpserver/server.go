@@ -40,6 +40,8 @@ type Server struct {
 
 	activeMu sync.Mutex
 	active   map[string]struct{}
+
+	providersMu sync.RWMutex
 }
 
 type asset struct {
@@ -69,6 +71,20 @@ func New(cfg config.Config, st *store.Store, providers *provider.Registry, versi
 	}
 	s.routes()
 	return s, nil
+}
+
+// registry returns the active provider registry. The pointer is swapped after
+// a .env save so in-flight requests keep using the registry they started with.
+func (s *Server) registry() *provider.Registry {
+	s.providersMu.RLock()
+	defer s.providersMu.RUnlock()
+	return s.providers
+}
+
+func (s *Server) setRegistry(reg *provider.Registry) {
+	s.providersMu.Lock()
+	s.providers = reg
+	s.providersMu.Unlock()
 }
 
 func (s *Server) loadAssets() error {
@@ -119,6 +135,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/models/refresh", s.handleRefreshModels)
 	s.mux.HandleFunc("GET /api/settings", s.handleGetSettings)
 	s.mux.HandleFunc("PUT /api/settings", s.handlePutSettings)
+	s.mux.HandleFunc("GET /api/env", s.handleGetEnvFile)
+	s.mux.HandleFunc("PUT /api/env", s.handlePutEnvFile)
 
 	s.mux.HandleFunc("GET /api/projects", s.handleListProjects)
 	s.mux.HandleFunc("POST /api/projects", s.handleCreateProject)
@@ -215,7 +233,7 @@ func writeError(w http.ResponseWriter, status int, code, message string) {
 }
 
 func (s *Server) internalError(w http.ResponseWriter, err error) {
-	s.logger.Error("request failed", "error", s.providers.Redact(err.Error()))
+	s.logger.Error("request failed", "error", s.registry().Redact(err.Error()))
 	writeError(w, http.StatusInternalServerError, "internal_error", "An internal error occurred.")
 }
 

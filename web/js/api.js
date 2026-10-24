@@ -82,6 +82,8 @@ export const api = {
   refreshModels: () => request('POST', '/api/models/refresh'),
   settings: () => request('GET', '/api/settings'),
   saveSettings: (body) => request('PUT', '/api/settings', { body }),
+  envFile: () => request('GET', '/api/env'),
+  saveEnvFile: (contents) => request('PUT', '/api/env', { body: { contents } }),
 
   createProject: (name) => request('POST', '/api/projects', { body: { name } }),
   renameProject: (id, name) => request('PATCH', '/api/projects/' + encodeURIComponent(id), { body: { name } }),

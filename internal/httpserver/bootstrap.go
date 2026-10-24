@@ -23,7 +23,7 @@ func (s *Server) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, bootstrapDTO{
 		Version:       s.version,
 		RetentionDays: s.cfg.RetentionDays,
-		Providers:     s.providers.Infos(),
+		Providers:     s.registry().Infos(),
 		Projects:      toProjectDTOs(projects),
 		Chats:         toChatDTOs(chats, s.cfg.RetentionDays),
 		Defaults:      defaultsDTO{ProviderID: settings.DefaultProvider, ModelID: settings.DefaultModel},
