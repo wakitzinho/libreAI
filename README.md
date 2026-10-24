@@ -73,7 +73,7 @@ inbound access except from the local browser or Tailscale Serve.
 ## Quick start
 
 ```sh
-git clone <your-repository-url> libreAI
+git clone https://github.com/wakitzinho/libreAI.git libreAI
 cd libreAI
 
 cp .env.example .env
