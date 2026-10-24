@@ -11,8 +11,8 @@ data/
 
 # Build output
 bin/
-libreai
-libreai-*
+/libreai
+/libreai-*
 dist/
 
 # Development artifacts
