@@ -58,10 +58,11 @@ in
       type = lib.types.nullOr lib.types.str;
       default = "/etc/libreai/libreai.env";
       description = ''
-        systemd EnvironmentFile containing provider credentials and other
-        settings. It is read by systemd as root, so it can be root-owned with
-        mode 0640. Set to null only if all configuration is supplied through
-        `environment`.
+        Configuration file passed to libreAI with `-env`. It contains provider
+        credentials and other settings. The application reads it as the
+        service user, so it must be readable by that user; `root:libreai` with
+        mode 0640 is sufficient. Set to null only if all configuration is
+        supplied through `environment`.
       '';
     };
 
@@ -84,9 +85,27 @@ in
       type = lib.types.bool;
       default = false;
       description = ''
-        Open `port` in the NixOS firewall. This is only needed when `host` is
-        not a loopback address. The default deployment intentionally does not
-        expose the service directly.
+        Open `port` on every interface in the NixOS firewall. This is only
+        needed when `host` is not a loopback address. The default deployment
+        intentionally does not expose the service directly.
+
+        Prefer `tailscaleOnly` on a Tailscale host: it opens the port only on
+        `tailscale0` instead of every interface.
+      '';
+    };
+
+    tailscaleOnly = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = ''
+        Allow direct connections only from the Tailscale interface
+        (`services.tailscale.interfaceName`, normally `tailscale0`). Set
+        `host = "0.0.0.0"` (or the machine's tailnet IP) so the server listens
+        on that interface, then reach it at `http://<tailnet-ip>:<port>`.
+
+        This opens `port` only on the Tailscale interface, not on the LAN.
+        Prefer Tailscale Serve (the default loopback `host`) when possible: it
+        provides HTTPS and tailnet identity.
       '';
     };
   };
@@ -106,12 +125,25 @@ in
     ];
 
     networking.firewall.allowedTCPPorts = lib.optional cfg.openFirewall cfg.port;
+    networking.firewall.interfaces.${config.services.tailscale.interfaceName}.allowedTCPPorts =
+      lib.optional cfg.tailscaleOnly cfg.port;
+
+    assertions = [
+      {
+        assertion = !(cfg.openFirewall && cfg.tailscaleOnly);
+        message = "services.libreai: openFirewall and tailscaleOnly are mutually exclusive; tailscaleOnly already opens the port on tailscale0";
+      }
+      {
+        assertion = !cfg.tailscaleOnly || !(cfg.host == "127.0.0.1" || cfg.host == "::1" || cfg.host == "localhost");
+        message = "services.libreai: tailscaleOnly requires host = \"0.0.0.0\" (or the tailnet IP); loopback cannot accept remote connections";
+      }
+    ];
 
     systemd.services.libreai = {
       description = "libreAI lightweight self-hosted AI chat";
       wantedBy = [ "multi-user.target" ];
-      wants = [ "network-online.target" ];
-      after = [ "network-online.target" ];
+      wants = [ "network-online.target" ] ++ lib.optional cfg.tailscaleOnly "tailscaled.service";
+      after = [ "network-online.target" ] ++ lib.optional cfg.tailscaleOnly "tailscaled.service";
 
       environment = {
         HOST = cfg.host;
@@ -124,8 +156,18 @@ in
         User = cfg.user;
         Group = cfg.group;
         WorkingDirectory = cfg.dataDir;
-        ExecStart = "${cfg.package}/bin/libreai";
-        EnvironmentFile = lib.optional (cfg.environmentFile != null) cfg.environmentFile;
+        # Let libreAI read the file itself instead of using systemd's
+        # EnvironmentFile. systemd environment files override Environment=,
+        # which would silently defeat the HOST/PORT/DATABASE_PATH values set
+        # above. Passing -env keeps the app's precedence: process environment
+        # (module settings) over file settings.
+        ExecStart = lib.concatStringsSep " " (
+          [ "${cfg.package}/bin/libreai" ]
+          ++ lib.optionals (cfg.environmentFile != null) [
+            "-env"
+            (lib.escapeShellArg cfg.environmentFile)
+          ]
+        );
 
         Restart = "on-failure";
         RestartSec = "3s";

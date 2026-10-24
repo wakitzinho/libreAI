@@ -562,11 +562,13 @@ store values are world-readable. Use `environmentFile` managed by your secrets
 tool (sops-nix, agenix, or a manually installed file).
 
 Module options: `enable`, `package`, `user`, `group`, `dataDir`, `host`,
-`port`, `environmentFile`, `environment`, and `openFirewall`. The module creates
-the system user/group, the data directory (`0700`), and a hardened systemd
-service analogous to the standalone unit. Keep `host = "127.0.0.1"` and use
-Tailscale Serve; only set `openFirewall = true` if you intentionally bind a
-non-loopback address behind another access-control layer.
+`port`, `environmentFile`, `environment`, `openFirewall`, and `tailscaleOnly`.
+The module creates the system user/group, the data directory (`0700`), and a
+hardened systemd service analogous to the standalone unit. Keep
+`host = "127.0.0.1"` and use Tailscale Serve. For direct access at
+`http://<tailnet-ip>:8080`, set `host = "0.0.0.0"` and `tailscaleOnly = true`.
+Only set `openFirewall = true` if you intentionally bind a non-loopback
+address behind another access-control layer.
 
 The default data directory persists across `nixos-rebuild switch` and binary
 updates. To update, update the flake input and rebuild:
@@ -665,6 +667,47 @@ with:
 sudo tailscale serve reset
 ```
 
+### Direct tailnet IP access
+
+Tailscale Serve is recommended, but if you specifically need
+`http://<tailscale-ip>:8080`, the server must listen beyond loopback and the
+port must be allowed on the Tailscale interface.
+
+With the NixOS module:
+
+```nix
+services.libreai = {
+  enable = true;
+  host = "0.0.0.0";
+  tailscaleOnly = true; # firewall rule restricted to tailscale0
+};
+```
+
+With the standalone unit or a manual run, set this in
+`/etc/libreai/libreai.env` (or `.env`):
+
+```sh
+HOST=0.0.0.0
+```
+
+and allow TCP 8080 only on the Tailscale interface:
+
+```nix
+networking.firewall.interfaces.tailscale0.allowedTCPPorts = [ 8080 ];
+```
+
+Verify the listener and test from another tailnet device:
+
+```sh
+ss -ltnp | grep 8080          # expect 0.0.0.0:8080, not 127.0.0.1:8080
+curl -fsS http://<tailscale-ip>:8080/api/health
+```
+
+Do **not** use `openFirewall = true` together with `host = "0.0.0.0"` on a
+machine with a LAN interface: that opens the port on every interface.
+`tailscaleOnly` avoids that. Tailnet ACLs still apply and should restrict who
+can reach the port.
+
 Tailscale provides transport security and tailnet identity. **Every tailnet
 user allowed by your ACLs can use libreAI, read all chats, and spend your
 provider quota.** Restrict access with tailnet ACLs and device approval. Do not
@@ -687,6 +730,7 @@ See [SECURITY.md](SECURITY.md) for the full trust model.
 | Port already in use | `ss -ltnp \| grep 8080`, then stop the conflicting process or change `PORT`. |
 | Systemd starts then exits | `journalctl -u libreai -e`; verify `/etc/libreai/libreai.env` ownership/mode and that the provider URL is valid. |
 | Health check fails | `curl -v http://127.0.0.1:8080/api/health`; if `HOST` is `0.0.0.0`, the built-in check uses `127.0.0.1`. |
+| Works on `127.0.0.1:8080` but not the Tailscale IP | `HOST` is still `127.0.0.1`. Set `HOST=0.0.0.0` (or the tailnet IP) and allow TCP `PORT` on `tailscale0`, or keep loopback and use `tailscale serve`. See [Direct tailnet IP access](#direct-tailnet-ip-access). |
 | Docker health check fails | `docker compose ps`, `docker compose logs libreai`; confirm `.env` exists and the volume is writable. |
 | Chats disappeared | Retention deletes chats after `CHAT_RETENTION_DAYS`; opening a chat or sending a message refreshes activity. Restore a backup if needed. |
 | Markdown looks like plain text | Code fences/links are rendered through the safe allowlist; raw HTML is intentionally escaped. |
