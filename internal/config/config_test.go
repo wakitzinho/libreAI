@@ -119,6 +119,101 @@ func TestProviderConfiguration(t *testing.T) {
 	_ = warnings
 }
 
+func TestOpenRouterAPIKeyAlias(t *testing.T) {
+	cfg, _, err := FromMap(map[string]string{
+		"OPENROUTER_API_KEY": "sk-or-test",
+	})
+	if err != nil {
+		t.Fatalf("FromMap: %v", err)
+	}
+	p, ok := cfg.ProviderByID("openrouter")
+	if !ok {
+		t.Fatal("openrouter provider missing")
+	}
+	if !p.Enabled || !p.Configured() || p.Status() != "ready" {
+		t.Fatalf("unexpected provider: %+v", p)
+	}
+	if p.DisplayName != "OpenRouter" {
+		t.Fatalf("display name = %q", p.DisplayName)
+	}
+	if p.BaseURL != "https://openrouter.ai/api/v1" {
+		t.Fatalf("base URL = %q", p.BaseURL)
+	}
+	if p.APIKey != "sk-or-test" {
+		t.Fatal("API key was not applied")
+	}
+	if strings.Contains(p.String(), "sk-or-test") {
+		t.Fatalf("String leaked the API key: %s", p.String())
+	}
+}
+
+func TestOpenRouterAliasDoesNotOverrideExplicitConfig(t *testing.T) {
+	cfg, _, err := FromMap(map[string]string{
+		"OPENROUTER_API_KEY":               "alias-key",
+		"PROVIDER_OPENROUTER_ENABLED":      "false",
+		"PROVIDER_OPENROUTER_DISPLAY_NAME": "Custom OpenRouter",
+		"PROVIDER_OPENROUTER_BASE_URL":     "https://proxy.example/v1",
+		"PROVIDER_OPENROUTER_API_KEY":      "explicit-key",
+	})
+	if err != nil {
+		t.Fatalf("FromMap: %v", err)
+	}
+	p, ok := cfg.ProviderByID("openrouter")
+	if !ok {
+		t.Fatal("openrouter provider missing")
+	}
+	if p.Enabled {
+		t.Fatal("explicit ENABLED=false was overridden")
+	}
+	if p.DisplayName != "Custom OpenRouter" || p.BaseURL != "https://proxy.example/v1" {
+		t.Fatalf("explicit fields were overridden: %+v", p)
+	}
+	if p.APIKey != "explicit-key" {
+		t.Fatal("explicit API key was overridden")
+	}
+}
+
+func TestOpenRouterAliasInEnvFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".env")
+	if err := os.WriteFile(path, []byte("OPENROUTER_API_KEY=\"file-key\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("OPENROUTER_API_KEY", "")
+
+	cfg, _, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	p, ok := cfg.ProviderByID("openrouter")
+	if !ok {
+		t.Fatal("openrouter provider missing")
+	}
+	if !p.Enabled || p.APIKey != "file-key" {
+		t.Fatalf("unexpected provider: %+v", p)
+	}
+}
+
+func TestOpenRouterAliasEnvironmentPrecedence(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".env")
+	content := "PROVIDER_OPENROUTER_ENABLED=true\nPROVIDER_OPENROUTER_API_KEY=file-key\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("OPENROUTER_API_KEY", "env-key")
+
+	cfg, _, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	p, ok := cfg.ProviderByID("openrouter")
+	if !ok {
+		t.Fatal("openrouter provider missing")
+	}
+	if p.APIKey != "env-key" {
+		t.Fatalf("process-environment alias did not override .env: %q", p.APIKey)
+	}
+}
+
 func TestMissingKeyWarnsButLoads(t *testing.T) {
 	cfg, warnings, err := FromMap(map[string]string{
 		"PROVIDER_TEST_ENABLED":  "true",

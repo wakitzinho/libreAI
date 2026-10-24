@@ -125,16 +125,24 @@ func Load(envFile string) (Config, []string, error) {
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return Config{}, nil, err
 	}
+	// Resolve shorthand variables per source so process-environment aliases
+	// still take precedence over values from the file.
+	applyProviderAliases(fileValues)
 	values := make(map[string]string, len(fileValues)+16)
 	for k, v := range fileValues {
 		values[k] = v
 	}
 	// Explicit process environment overrides .env.
+	envValues := make(map[string]string)
 	for _, entry := range os.Environ() {
 		k, v, ok := strings.Cut(entry, "=")
 		if ok {
-			values[k] = v
+			envValues[k] = v
 		}
+	}
+	applyProviderAliases(envValues)
+	for k, v := range envValues {
+		values[k] = v
 	}
 	cfg, warnings, err := FromMap(values)
 	if err != nil {
@@ -151,6 +159,10 @@ func Load(envFile string) (Config, []string, error) {
 
 // FromMap builds a Config from a set of environment-style key/value pairs.
 func FromMap(values map[string]string) (Config, []string, error) {
+	if values == nil {
+		values = map[string]string{}
+	}
+	applyProviderAliases(values)
 	cfg := Config{
 		Host:                     DefaultHost,
 		Port:                     DefaultPort,
@@ -282,6 +294,51 @@ var providerFieldSuffixes = []string{
 	"_NO_AUTH",
 	"_HEADERS",
 	"_MODELS",
+}
+
+// providerAlias is a convenience variable for a known OpenAI-compatible
+// provider. The canonical PROVIDER_<ID>_* variables always take precedence;
+// an alias only fills in fields that are missing or empty.
+type providerAlias struct {
+	envKey      string
+	id          string
+	displayName string
+	baseURL     string
+}
+
+var providerAliases = []providerAlias{
+	{
+		envKey:      "OPENROUTER_API_KEY",
+		id:          "openrouter",
+		displayName: "OpenRouter",
+		baseURL:     "https://openrouter.ai/api/v1",
+	},
+}
+
+// applyProviderAliases expands recognized shorthand variables into the
+// canonical provider fields. It is called separately for the env file and the
+// process environment so that normal environment precedence still applies.
+func applyProviderAliases(values map[string]string) {
+	for _, alias := range providerAliases {
+		apiKey := strings.TrimSpace(values[alias.envKey])
+		if apiKey == "" {
+			continue
+		}
+		prefix := "PROVIDER_" + strings.ToUpper(alias.id) + "_"
+		setProviderFieldIfEmpty(values, prefix+"API_KEY", apiKey)
+		setProviderFieldIfEmpty(values, prefix+"DISPLAY_NAME", alias.displayName)
+		setProviderFieldIfEmpty(values, prefix+"BASE_URL", alias.baseURL)
+		// An explicit ENABLED value wins, including false.
+		if strings.TrimSpace(values[prefix+"ENABLED"]) == "" {
+			values[prefix+"ENABLED"] = "true"
+		}
+	}
+}
+
+func setProviderFieldIfEmpty(values map[string]string, key, value string) {
+	if strings.TrimSpace(values[key]) == "" {
+		values[key] = value
+	}
 }
 
 func parseProviders(values map[string]string) ([]Provider, []string, []string) {

@@ -228,6 +228,29 @@ PROVIDER_OPENAI_API_KEY=sk-...
 PROVIDER_OPENAI_MODELS=gpt-4.1-mini
 ```
 
+OpenRouter has a shorthand:
+
+```dotenv
+OPENROUTER_API_KEY=sk-or-...
+```
+
+This enables the `openrouter` provider with the display name `OpenRouter` and
+the base URL `https://openrouter.ai/api/v1`. It is equivalent to:
+
+```dotenv
+PROVIDER_OPENROUTER_ENABLED=true
+PROVIDER_OPENROUTER_DISPLAY_NAME=OpenRouter
+PROVIDER_OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+PROVIDER_OPENROUTER_API_KEY=sk-or-...
+```
+
+The shorthand only fills fields that are unset, so any explicit
+`PROVIDER_OPENROUTER_*` value wins. In particular, setting
+`PROVIDER_OPENROUTER_ENABLED=false` keeps the provider disabled even when
+`OPENROUTER_API_KEY` is present. Add
+`PROVIDER_OPENROUTER_MODELS=...` to restrict the discovered model list. For
+other OpenAI-compatible providers, use the generic `PROVIDER_<ID>_*` form.
+
 Example for a local OpenAI-compatible server with no key:
 
 ```dotenv
