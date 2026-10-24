@@ -30,6 +30,33 @@
         };
       });
 
+      # Same dependencies as scripts/install-deps.sh. Use this on NixOS
+      # instead of installing build tools system-wide:
+      #   nix develop
+      devShells = forAllSystems (system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+        in
+        {
+          default = pkgs.mkShell {
+            packages = with pkgs; [
+              go
+              gnumake
+              git
+              curl
+              cacert
+              nodejs
+              sqlite
+              file
+              gawk
+            ];
+            shellHook = ''
+              export SSL_CERT_FILE="${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+              export NIX_SSL_CERT_FILE="$SSL_CERT_FILE"
+            '';
+          };
+        });
+
       nixosModules = {
         default = import ./deploy/nixos/module.nix;
         libreai = self.nixosModules.default;

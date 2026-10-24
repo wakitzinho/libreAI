@@ -70,11 +70,74 @@ hardware.
 The server needs outbound HTTPS access to your provider. It does not need
 inbound access except from the local browser or Tailscale Serve.
 
+## Installing dependencies
+
+`scripts/install-deps.sh` checks the tools used by the build, the tests, and
+the optional deployment methods, then installs whatever is missing with the
+system package manager. It supports apt, dnf, pacman, zypper, apk, xbps, and
+Portage, and verifies that Go is 1.26+ and Node.js is 20+.
+
+```sh
+./scripts/install-deps.sh            # build/test dependencies
+./scripts/install-deps.sh --all      # also Docker/Compose and Tailscale
+./scripts/install-deps.sh --check    # report only; non-zero if incomplete
+./scripts/install-deps.sh --dry-run  # show the commands, change nothing
+```
+
+`make deps` and `make deps-check` are shortcuts. The default profile covers Go,
+GNU make, git, curl, CA certificates, Node.js, sqlite3, `file`, and `awk`.
+Docker, Docker Compose, and Tailscale are only checked or installed when
+requested with `--docker`, `--tailscale`, or `--all`.
+
+### NixOS
+
+NixOS does not install packages imperatively, so the script never runs
+`nix-env` or `nix profile`. It prints a `configuration.nix` block instead. The
+flake also provides a development shell containing the same tools:
+
+```sh
+nix develop
+```
+
+For a system-wide installation, paste this inside the top-level `{ ... }` of
+`/etc/nixos/configuration.nix`, then run `sudo nixos-rebuild switch`:
+
+```nix
+  environment.systemPackages = with pkgs; [
+    # libreAI build and test dependencies
+    go
+    gnumake
+    git
+    curl
+    cacert
+    nodejs
+    sqlite
+    file
+    gawk
+
+    # Optional deployment tools (uncomment to enable)
+    # docker
+    # docker-compose
+    # tailscale
+  ];
+
+  # Uncomment (or let the installer print it uncommented with --all):
+  # virtualisation.docker.enable = true; # required for Docker
+  # services.tailscale.enable = true;    # required for Tailscale
+```
+
+The optional packages can stay commented unless you use those deployment
+paths. `nix develop` is the quickest option for building and testing without
+changing the system.
+
 ## Quick start
 
 ```sh
 git clone https://github.com/wakitzinho/libreAI.git libreAI
 cd libreAI
+
+./scripts/install-deps.sh   # install missing build/test dependencies
+# On NixOS use `nix develop` instead; see "Installing dependencies" above.
 
 cp .env.example .env
 chmod 600 .env

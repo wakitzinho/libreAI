@@ -5,7 +5,7 @@ GOAMD64 ?= v1
 CGO_ENABLED ?= 0
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
-.PHONY: all build build-linux-amd64 run test test-go test-js vet fmt clean check-binary
+.PHONY: all build build-linux-amd64 run test test-go test-js vet fmt clean check-binary deps deps-check
 
 all: build
 
@@ -19,6 +19,12 @@ build-linux-amd64:
 
 run:
 	CGO_ENABLED=$(CGO_ENABLED) GOAMD64=$(GOAMD64) $(GO) run ./cmd/libreai
+
+deps:
+	./scripts/install-deps.sh
+
+deps-check:
+	./scripts/install-deps.sh --check
 
 test: test-go test-js
 
