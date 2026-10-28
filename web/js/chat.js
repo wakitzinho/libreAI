@@ -3,6 +3,9 @@
 import { renderMarkdown } from './markdown.js';
 import { autoGrow, copyText, flashButton, formatTimestamp, icon, showToast } from './ui.js';
 
+/** Detects Markdown constructs so the live preview only appears when it adds value. */
+const MARKDOWN_PATTERN = /(?:^|\n)\s{0,3}(?:#{1,6}\s|[-+*]\s|\d+[.)]\s|>\s|`{3,}|~{3,})|`[^`\n]+`|\*\*[^*\n]+\*\*|__[^_\n]+__|~~[^~\n]+~~|\[[^\]\n]+\]\([^)\n]+\)/;
+
 function makeButton(className, label, iconName) {
   const button = document.createElement('button');
   button.type = 'button';
@@ -46,6 +49,7 @@ export class ChatView {
     e.input.addEventListener('input', () => {
       autoGrow(e.input);
       this.updateSendState();
+      this.updatePreview();
     });
     e.input.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
@@ -56,16 +60,21 @@ export class ChatView {
     e.stop.addEventListener('click', () => this.stop());
     e.modelSelect.addEventListener('change', () => this.modelChanged());
     e.messages.addEventListener('click', (event) => this.messageAction(event));
+    if (e.preview) {
+      e.preview.addEventListener('click', (event) => this.messageAction(event));
+    }
     e.empty.addEventListener('click', (event) => {
       const suggestion = event.target.closest('[data-suggestion]');
       if (suggestion) {
         e.input.value = suggestion.dataset.suggestion;
         autoGrow(e.input);
         this.updateSendState();
+        this.updatePreview();
         e.input.focus();
       }
     });
     this.updateSendState();
+    this.updatePreview();
   }
 
   setProviders(providers, hidden) {
@@ -182,6 +191,20 @@ export class ChatView {
   updateSendState() {
     const empty = this.elements.input.value.trim() === '';
     this.elements.send.disabled = !!this.stream || empty;
+  }
+
+  updatePreview() {
+    const preview = this.elements.preview;
+    const body = this.elements.previewBody;
+    if (!preview || !body) return;
+    const value = this.elements.input.value;
+    const show = value.trim() !== '' && MARKDOWN_PATTERN.test(value);
+    preview.hidden = !show;
+    if (!show) {
+      body.replaceChildren();
+      return;
+    }
+    body.innerHTML = renderMarkdown(value);
   }
 
   setStreamingUI(streaming) {
@@ -345,6 +368,7 @@ export class ChatView {
       this.elements.input.value = '';
       autoGrow(this.elements.input);
       this.updateSendState();
+      this.updatePreview();
     } else if (options.editId !== undefined) {
       const index = this.messages.findIndex((m) => String(m.id) === String(options.editId));
       if (index === -1) return;
@@ -442,6 +466,7 @@ export class ChatView {
             this.elements.input.value = restoreInput;
             autoGrow(this.elements.input);
             this.updateSendState();
+            this.updatePreview();
           }
         } else {
           assistant.status = 'error';
@@ -492,15 +517,18 @@ export class ChatView {
           this.elements.input.value = '';
           autoGrow(this.elements.input);
           this.updateSendState();
+          this.updatePreview();
         }
       }
     } else {
       this.renderAll(false);
       this.updateSendState();
+      this.updatePreview();
       if (restoreInput !== null && this.elements.input.value === '') {
         this.elements.input.value = restoreInput;
         autoGrow(this.elements.input);
         this.updateSendState();
+        this.updatePreview();
       }
     }
   }
