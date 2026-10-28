@@ -1,10 +1,8 @@
 /** Conversation view, SSE streaming, composer, edit/regenerate, and Markdown actions. */
 
 import { renderMarkdown } from './markdown.js';
+import { MarkdownComposer } from './composer.js';
 import { autoGrow, copyText, flashButton, formatTimestamp, icon, showToast } from './ui.js';
-
-/** Detects Markdown constructs so the live preview only appears when it adds value. */
-const MARKDOWN_PATTERN = /(?:^|\n)\s{0,3}(?:#{1,6}\s|[-+*]\s|\d+[.)]\s|>\s|`{3,}|~{3,})|`[^`\n]+`|\*\*[^*\n]+\*\*|__[^_\n]+__|~~[^~\n]+~~|\[[^\]\n]+\]\([^)\n]+\)/;
 
 function makeButton(className, label, iconName) {
   const button = document.createElement('button');
@@ -36,6 +34,7 @@ export class ChatView {
     this.renderQueued = false;
     this.messageEls = new Map();
     this.updateTimer = null;
+    this.composer = new MarkdownComposer(elements.input);
 
     this.bind();
   }
@@ -49,32 +48,28 @@ export class ChatView {
     e.input.addEventListener('input', () => {
       autoGrow(e.input);
       this.updateSendState();
-      this.updatePreview();
     });
     e.input.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
-        event.preventDefault();
-        if (!e.send.disabled) e.form.requestSubmit();
+      if (event.key !== 'Enter' || event.isComposing) return;
+      event.preventDefault();
+      if (event.shiftKey) {
+        this.composer.insertText('\n');
+      } else if (!e.send.disabled) {
+        e.form.requestSubmit();
       }
     });
     e.stop.addEventListener('click', () => this.stop());
     e.modelSelect.addEventListener('change', () => this.modelChanged());
     e.messages.addEventListener('click', (event) => this.messageAction(event));
-    if (e.preview) {
-      e.preview.addEventListener('click', (event) => this.messageAction(event));
-    }
     e.empty.addEventListener('click', (event) => {
       const suggestion = event.target.closest('[data-suggestion]');
       if (suggestion) {
-        e.input.value = suggestion.dataset.suggestion;
+        this.composer.setValue(suggestion.dataset.suggestion, { caretAtEnd: true, focus: true });
         autoGrow(e.input);
         this.updateSendState();
-        this.updatePreview();
-        e.input.focus();
       }
     });
     this.updateSendState();
-    this.updatePreview();
   }
 
   setProviders(providers, hidden) {
@@ -185,32 +180,18 @@ export class ChatView {
   }
 
   focusComposer() {
-    this.elements.input.focus();
+    this.composer.focus();
   }
 
   updateSendState() {
-    const empty = this.elements.input.value.trim() === '';
+    const empty = this.composer.value.trim() === '';
     this.elements.send.disabled = !!this.stream || empty;
-  }
-
-  updatePreview() {
-    const preview = this.elements.preview;
-    const body = this.elements.previewBody;
-    if (!preview || !body) return;
-    const value = this.elements.input.value;
-    const show = value.trim() !== '' && MARKDOWN_PATTERN.test(value);
-    preview.hidden = !show;
-    if (!show) {
-      body.replaceChildren();
-      return;
-    }
-    body.innerHTML = renderMarkdown(value);
   }
 
   setStreamingUI(streaming) {
     const e = this.elements;
     e.send.hidden = streaming;
-    e.send.disabled = streaming || e.input.value.trim() === '';
+    e.send.disabled = streaming || this.composer.value.trim() === '';
     e.stop.hidden = !streaming;
     e.stop.disabled = false;
     e.stop.textContent = 'Stop';
@@ -313,7 +294,7 @@ export class ChatView {
 
   async submit() {
     if (this.stream) return;
-    const content = this.elements.input.value.trim();
+    const content = this.composer.value.trim();
     if (!content) return;
     if (!this.chat) {
       try {
@@ -365,10 +346,9 @@ export class ChatView {
         created_at: now,
       });
       restoreInput = options.newContent;
-      this.elements.input.value = '';
+      this.composer.setValue('');
       autoGrow(this.elements.input);
       this.updateSendState();
-      this.updatePreview();
     } else if (options.editId !== undefined) {
       const index = this.messages.findIndex((m) => String(m.id) === String(options.editId));
       if (index === -1) return;
@@ -462,11 +442,10 @@ export class ChatView {
           if (optimisticUserId) {
             this.messages = this.messages.filter((m) => m.id !== optimisticUserId);
           }
-          if (restoreInput !== null && this.elements.input.value === '') {
-            this.elements.input.value = restoreInput;
+          if (restoreInput !== null && this.composer.value === '') {
+            this.composer.setValue(restoreInput, { caretAtEnd: true, focus: true });
             autoGrow(this.elements.input);
             this.updateSendState();
-            this.updatePreview();
           }
         } else {
           assistant.status = 'error';
@@ -513,22 +492,19 @@ export class ChatView {
       this.onChatMeta(detail.chat);
       if (restoreInput !== null) {
         const lastUser = [...this.messages].reverse().find((m) => m.role === 'user');
-        if (lastUser && lastUser.content === restoreInput && this.elements.input.value === restoreInput) {
-          this.elements.input.value = '';
+        if (lastUser && lastUser.content === restoreInput && this.composer.value === restoreInput) {
+          this.composer.setValue('');
           autoGrow(this.elements.input);
           this.updateSendState();
-          this.updatePreview();
         }
       }
     } else {
       this.renderAll(false);
       this.updateSendState();
-      this.updatePreview();
-      if (restoreInput !== null && this.elements.input.value === '') {
-        this.elements.input.value = restoreInput;
+      if (restoreInput !== null && this.composer.value === '') {
+        this.composer.setValue(restoreInput, { caretAtEnd: true, focus: true });
         autoGrow(this.elements.input);
         this.updateSendState();
-        this.updatePreview();
       }
     }
   }

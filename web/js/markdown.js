@@ -323,8 +323,7 @@ function normalizeLang(lang) {
   return LANGUAGE_ALIASES[cleaned] || cleaned;
 }
 
-export function highlightCode(code, language) {
-  const lang = normalizeLang(language);
+export function highlightCode(code, language) {  const lang = normalizeLang(language);
   const cfg = LANG_CONFIGS[lang] || DEFAULT_LANG;
   const text = String(code);
   const keywords = cfg.keywords || new Set();
@@ -416,4 +415,190 @@ export function highlightCode(code, language) {
     i++;
   }
   return out;
+}
+
+/* ------------------------------------------------------------------------- */
+/* Composer editor renderer                                                  */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * Renders Markdown for the chat composer. Unlike renderMarkdown(), this keeps
+ * every source character in the output: syntax markers are wrapped in hidden
+ * spans instead of being dropped. That lets the composer stay editable while
+ * still displaying formatted text, and lets caret offsets map back to the
+ * original Markdown source.
+ */
+
+function composerSyntax(value, caretAnchor = false) {
+  return '<span class="c-mark">' + escapeHTML(value) + '</span>' +
+    (caretAnchor ? '<span class="c-anchor">\u200B</span>' : '');
+}
+
+function composerInline(source, depth = 0) {
+  if (typeof source !== 'string') return '';
+  if (depth > 12) return escapeHTML(source);
+  let out = '';
+  let plain = '';
+  const flush = () => {
+    if (plain) {
+      out += escapeHTML(plain);
+      plain = '';
+    }
+  };
+  let i = 0;
+  while (i < source.length) {
+    const ch = source[i];
+
+    if (ch === '\\' && i + 1 < source.length && /[\\`*_{}\[\]()#+\-.!~>]/.test(source[i + 1])) {
+      flush();
+      out += composerSyntax('\\') + escapeHTML(source[i + 1]);
+      i += 2;
+      continue;
+    }
+
+    if (ch === '`') {
+      let ticks = 1;
+      while (source[i + ticks] === '`') ticks++;
+      const marker = '`'.repeat(ticks);
+      const close = source.indexOf(marker, i + ticks);
+      if (close !== -1) {
+        flush();
+        out += composerSyntax(marker) + '<code>' + escapeHTML(source.slice(i + ticks, close)) + '</code>' + composerSyntax(marker, true);
+        i = close + ticks;
+        continue;
+      }
+    }
+
+    if (ch === '[') {
+      const labelEnd = source.indexOf('](', i + 1);
+      if (labelEnd !== -1) {
+        const urlEnd = source.indexOf(')', labelEnd + 2);
+        if (urlEnd !== -1) {
+          const label = source.slice(i + 1, labelEnd);
+          const rawURL = source.slice(labelEnd + 2, urlEnd);
+          if (safeURL(rawURL)) {
+            flush();
+            out += composerSyntax('[') +
+              '<span class="c-link">' + composerInline(label, depth + 1) + '</span>' +
+              composerSyntax('](' + rawURL + ')', true);
+            i = urlEnd + 1;
+            continue;
+          }
+        }
+      }
+    }
+
+    if (ch === '*' || ch === '_' || ch === '~') {
+      let count = 1;
+      while (source[i + count] === ch && count < 3) count++;
+      const marker = ch.repeat(count);
+      if (ch === '_' && count === 1 && (isWordChar(source[i - 1]) || isWordChar(source[i + 1]))) {
+        plain += ch;
+        i++;
+        continue;
+      }
+      if ((ch === '~' && count < 2) || (count === 3 && ch !== '*')) {
+        plain += marker;
+        i += count;
+        continue;
+      }
+      const close = findClosing(source, marker, i + count);
+      if (close !== -1 && close > i + count) {
+        const innerRaw = source.slice(i + count, close);
+        if (innerRaw.trim() === innerRaw && innerRaw !== '') {
+          flush();
+          const inner = composerInline(innerRaw, depth + 1);
+          const opening = composerSyntax(marker);
+          const closing = composerSyntax(marker, true);
+          if (count === 3) {
+            out += opening + '<strong><em>' + inner + '</em></strong>' + closing;
+          } else if (count === 2) {
+            const tag = ch === '~' ? 'del' : 'strong';
+            out += opening + '<' + tag + '>' + inner + '</' + tag + '>' + closing;
+          } else {
+            out += opening + '<em>' + inner + '</em>' + closing;
+          }
+          i = close + count;
+          continue;
+        }
+      }
+    }
+
+    plain += ch;
+    i++;
+  }
+  flush();
+  return out;
+}
+
+export function renderComposerMarkdown(source) {
+  if (typeof source !== 'string' || source === '') return '';
+  const lines = source.replace(/\r\n?/g, '\n').split('\n');
+  const out = [];
+  let fence = null;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    if (fence) {
+      const closeRe = new RegExp('^ {0,3}' + (fence.char === '`' ? '`' : '~') + '{' + fence.length + ',}\\s*$');
+      if (closeRe.test(line)) {
+        out.push(composerSyntax(line));
+        fence = null;
+      } else {
+        out.push('<span class="c-code-line">' + escapeHTML(line) + '</span>');
+      }
+      continue;
+    }
+
+    const fenceMatch = /^( {0,3})(`{3,}|~{3,})(.*)$/.exec(line);
+    if (fenceMatch) {
+      out.push(composerSyntax(line));
+      fence = { char: fenceMatch[2][0], length: fenceMatch[2].length };
+      continue;
+    }
+
+    const heading = /^( {0,3})(#{1,6})(\s+)(.*)$/.exec(line);
+    if (heading) {
+      out.push('<span class="c-line c-h' + heading[2].length + '">' +
+        composerSyntax(heading[1] + heading[2] + heading[3]) +
+        composerInline(heading[4]) + '</span>');
+      continue;
+    }
+
+    if (/^( {0,3})([-*_])(?:\s*\2){2,}\s*$/.test(line)) {
+      out.push('<span class="c-line c-hr">' + composerSyntax(line) + '</span>');
+      continue;
+    }
+
+    const quote = /^( {0,3})(>\s?)(.*)$/.exec(line);
+    if (quote) {
+      out.push('<span class="c-line c-quote">' +
+        composerSyntax(quote[1] + quote[2]) +
+        composerInline(quote[3]) + '</span>');
+      continue;
+    }
+
+    const ul = /^(\s*)([-+*])(\s+)(.*)$/.exec(line);
+    if (ul) {
+      out.push(escapeHTML(ul[1]) +
+        '<span class="c-line c-li">' +
+        composerSyntax(ul[2] + ul[3]) +
+        composerInline(ul[4]) + '</span>');
+      continue;
+    }
+
+    const ol = /^(\s*)(\d+[.)])(\s+)(.*)$/.exec(line);
+    if (ol) {
+      out.push(escapeHTML(ol[1]) +
+        '<span class="c-line c-ol" data-num="' + escapeHTML(ol[2]) + '">' +
+        composerSyntax(ol[2] + ol[3]) +
+        composerInline(ol[4]) + '</span>');
+      continue;
+    }
+
+    out.push(composerInline(line));
+  }
+
+  return out.join('\n');
 }

@@ -253,7 +253,11 @@ export function debounce(fn, wait = 100) {
   };
 }
 
-export function autoGrow(textarea, maxHeight = 200) {
-  textarea.style.height = 'auto';
-  textarea.style.height = Math.min(textarea.scrollHeight, maxHeight) + 'px';
+export function autoGrow(element, maxHeight = 200) {
+  if (!element) return;
+  element.style.height = 'auto';
+  element.style.height = Math.min(element.scrollHeight, maxHeight) + 'px';
+  if (element.isContentEditable) {
+    element.style.overflowY = element.scrollHeight > maxHeight ? 'auto' : 'hidden';
+  }
 }

@@ -1,7 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { escapeHTML, highlightCode, renderInline, renderMarkdown } from '../../web/js/markdown.js';
+import { escapeHTML, highlightCode, renderComposerMarkdown, renderInline, renderMarkdown } from '../../web/js/markdown.js';
+
+function composerText(html) {
+  return html
+    .replace(/<span class="c-anchor">\u200b<\/span>/g, '')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&gt;/g, '>')
+    .replace(/&lt;/g, '<')
+    .replace(/&amp;/g, '&');
+}
 
 test('escapeHTML escapes all markup characters', () => {
   assert.equal(
@@ -125,4 +136,53 @@ test('backslash escapes markup markers', () => {
   const html = renderInline('\\*not italic\\* and \\[not a link\\]');
   assert.ok(html.includes('*not italic*'));
   assert.ok(!html.includes('<em>'));
+});
+
+test('composer rendering keeps the Markdown source recoverable', () => {
+  const source = [
+    '# Heading',
+    '',
+    '- one',
+    '- two with **bold** and `code`',
+    '',
+    '> quoted *text*',
+    '',
+    '---',
+    '',
+    '```go',
+    'if x < 1 {',
+    '\tfmt.Println("<tag>")',
+    '}',
+    '```',
+    '',
+    '[docs](https://example.com) and ~~gone~~',
+  ].join('\n');
+  const html = renderComposerMarkdown(source);
+  assert.equal(composerText(html), source);
+  assert.ok(html.includes('<strong>bold</strong>'));
+  assert.ok(html.includes('<em>text</em>'));
+  assert.ok(html.includes('<code>code</code>'));
+  assert.ok(html.includes('<del>gone</del>'));
+  assert.ok(html.includes('c-h1'));
+  assert.ok(html.includes('c-li'));
+  assert.ok(html.includes('c-quote'));
+  assert.ok(html.includes('c-code-line'));
+  assert.ok(html.includes('c-link'));
+  assert.ok(!html.includes('<tag>'));
+});
+
+test('composer rendering hides syntax markers but keeps them in the DOM', () => {
+  const html = renderComposerMarkdown('**bold** and `code`');
+  assert.ok(html.includes('<span class="c-mark">**</span>'));
+  assert.ok(html.includes('<span class="c-mark">`</span>'));
+  assert.ok(html.includes('c-anchor'));
+});
+
+test('composer rendering escapes hostile input and unsafe links', () => {
+  const html = renderComposerMarkdown('<img src=x onerror=alert(1)> [x](javascript:alert(1))');
+  assert.ok(!html.includes('<img'));
+  assert.ok(html.includes('&lt;img'));
+  assert.ok(!html.includes('class="c-link"'));
+  assert.equal(renderComposerMarkdown(''), '');
+  assert.equal(renderComposerMarkdown(null), '');
 });

@@ -182,14 +182,9 @@
 
       <div class="composer-wrap">
         <form id="composer-form" class="composer">
-          <label class="sr-only" for="composer-input">Message libreAI</label>
-          <textarea id="composer-input" class="composer-input" rows="1" placeholder="Message libreAI…" spellcheck="true"></textarea>
-          <div id="composer-preview" class="composer-preview" hidden>
-            <span class="composer-preview-label">Markdown preview</span>
-            <div id="composer-preview-body" class="composer-preview-body markdown"></div>
-          </div>
+          <div id="composer-input" class="composer-input" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Message libreAI" data-placeholder="Message libreAI…" spellcheck="true"></div>
           <div class="composer-bar">
-            <span class="composer-hint">Enter to send · Shift + Enter for a new line · Markdown supported</span>
+            <span class="composer-hint">Enter to send · Shift + Enter for a new line</span>
             <button id="send-button" class="send-button" type="submit" aria-label="Send message" title="Send message" disabled>
               <svg class="icon" aria-hidden="true"><use href="#icon-send"></use></svg>
             </button>
