@@ -126,6 +126,55 @@ test('unclosed code fences do not lose content', () => {
   assert.ok(html.includes('&quot;hello&quot;'));
 });
 
+test('GFM tables render with alignment and inline formatting', () => {
+  const html = renderMarkdown([
+    '| Language | Memory | Notes |',
+    '| :--- | :---: | ---: |',
+    '| **Go** | Low | `fast` |',
+    '| C / C++ | Lowest | a \\| b |',
+    '| Rust | Lowest | safe |',
+  ].join('\n'));
+  assert.ok(html.includes('<div class="table-wrap"><table>'));
+  assert.ok(html.includes('<thead><tr>'));
+  assert.ok(html.includes('<th style="text-align:left">Language</th>'));
+  assert.ok(html.includes('<th style="text-align:center">Memory</th>'));
+  assert.ok(html.includes('<th style="text-align:right">Notes</th>'));
+  assert.ok(html.includes('<strong>Go</strong>'));
+  assert.ok(html.includes('<code>fast</code>'));
+  assert.ok(html.includes('<td style="text-align:right">a | b</td>'));
+  assert.ok(html.includes('<tbody>'));
+  assert.equal((html.match(/<tr>/g) || []).length, 4);
+});
+
+test('table rows without a delimiter stay a paragraph', () => {
+  const html = renderMarkdown('| not | a table |\n| just | text |');
+  assert.ok(!html.includes('<table>'));
+  assert.ok(html.includes('<p>'));
+});
+
+test('table cells cannot inject markup and pipes in code stay literal', () => {
+  const html = renderMarkdown([
+    '| A | B |',
+    '| --- | --- |',
+    '| <img src=x onerror=alert(1)> | `a | b` |',
+  ].join('\n'));
+  assert.ok(!html.includes('<img'));
+  assert.ok(html.includes('&lt;img'));
+  assert.ok(html.includes('<code>a | b</code>'));
+  assert.ok(html.includes('>A</th>'));
+});
+
+test('tables are not swallowed by a preceding paragraph', () => {
+  const html = renderMarkdown('Intro text\n| A | B |\n| --- | --- |\n| 1 | 2 |');
+  assert.ok(html.includes('<p>Intro text</p>'));
+  assert.ok(html.includes('<table>'));
+});
+
+test('table rows are padded to the header width', () => {
+  const html = renderMarkdown('| A | B | C |\n| --- | --- | --- |\n| 1 |');
+  assert.ok(html.includes('<td>1</td><td></td><td></td>'));
+});
+
 test('empty and non-string input are safe', () => {
   assert.equal(renderMarkdown(''), '');
   assert.equal(renderMarkdown(null), '');

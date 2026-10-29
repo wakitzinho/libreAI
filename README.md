@@ -15,8 +15,8 @@ path is a private Tailscale tailnet, not the public Internet.
 - OpenAI-compatible providers configured server-side in `.env`; API keys never
   reach the browser.
 - Streaming chat over SSE, with **Stop**, **Regenerate**, and **Edit & resend**.
-- Markdown and code-block rendering with an allowlist sanitizer, syntax
-  highlighting, and copy buttons.
+- Markdown and code-block rendering (headings, lists, tables, quotes, links)
+  with an allowlist sanitizer, syntax highlighting, and copy buttons.
 - Projects, chat search, move/rename/delete, and Markdown/JSON export.
 - Automatic deletion of chats inactive for 30 days (configurable), at startup
   and every six hours.

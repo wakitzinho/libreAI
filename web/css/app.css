@@ -1051,6 +1051,46 @@ code {
   border-top: 1px solid var(--surface0);
 }
 
+.markdown .table-wrap {
+  margin: 0.9em 0;
+  border: 1px solid var(--surface0);
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.94em;
+  line-height: 1.5;
+}
+
+.markdown th,
+.markdown td {
+  padding: 7px 12px;
+  border-right: 1px solid var(--surface0);
+  border-bottom: 1px solid var(--surface0);
+  text-align: left;
+  vertical-align: top;
+}
+
+.markdown th:last-child,
+.markdown td:last-child {
+  border-right: 0;
+}
+
+.markdown tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.markdown thead th {
+  background: var(--mantle);
+  color: var(--text);
+  font-weight: 650;
+  white-space: nowrap;
+}
+
 .markdown a {
   color: var(--accent-blue);
   text-decoration: underline;

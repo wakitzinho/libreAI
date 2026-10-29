@@ -219,7 +219,123 @@ function isBlockStart(lines, index) {
     /^ {0,3}#{1,6}\s+/.test(line) ||
     /^ {0,3}([-*_])(?:\s*\1){2,}\s*$/.test(line) ||
     /^ {0,3}>\s?/.test(line) ||
-    /^ {0,3}([-+*]|\d+[.)])\s+/.test(line);
+    /^ {0,3}([-+*]|\d+[.)])\s+/.test(line) ||
+    tableAt(lines, index) !== null;
+}
+
+/**
+ * Splits a GFM table row into trimmed cell strings. Pipes inside inline code
+ * spans and escaped with a backslash are treated as literal characters.
+ */
+function splitTableRow(line) {
+  let text = String(line).trim();
+  if (text.startsWith('|')) text = text.slice(1);
+  if (text.endsWith('|') && !text.endsWith('\\|')) text = text.slice(0, -1);
+
+  const cells = [];
+  let current = '';
+  let codeTicks = 0;
+  let i = 0;
+  while (i < text.length) {
+    const ch = text[i];
+
+    if (ch === '\\' && text[i + 1] === '|') {
+      current += '|';
+      i += 2;
+      continue;
+    }
+
+    if (ch === '`') {
+      let ticks = 1;
+      while (text[i + ticks] === '`') ticks++;
+      if (codeTicks === 0) {
+        codeTicks = ticks;
+      } else if (ticks === codeTicks) {
+        codeTicks = 0;
+      }
+      current += text.slice(i, i + ticks);
+      i += ticks;
+      continue;
+    }
+
+    if (ch === '|' && codeTicks === 0) {
+      cells.push(current.trim());
+      current = '';
+      i++;
+      continue;
+    }
+
+    current += ch;
+    i++;
+  }
+  cells.push(current.trim());
+  return cells;
+}
+
+function tableAlignments(line) {
+  if (!line.includes('|')) return null;
+  const cells = splitTableRow(line);
+  if (cells.length === 0) return null;
+  const aligns = [];
+  for (const cell of cells) {
+    if (!/^:?-+:?$/.test(cell)) return null;
+    const left = cell.startsWith(':');
+    const right = cell.endsWith(':');
+    aligns.push(left && right ? 'center' : right ? 'right' : left ? 'left' : null);
+  }
+  return aligns;
+}
+
+/** Returns the parsed header/alignment pair when a table starts at `index`. */
+function tableAt(lines, index) {
+  if (index + 1 >= lines.length) return null;
+  if (!lines[index].includes('|')) return null;
+  const header = splitTableRow(lines[index]);
+  if (header.length === 0) return null;
+  const aligns = tableAlignments(lines[index + 1]);
+  if (!aligns || aligns.length !== header.length) return null;
+  return { header, aligns };
+}
+
+function renderTable(lines, start) {
+  const table = tableAt(lines, start);
+  const { header, aligns } = table;
+  const alignAttr = (index) => (aligns[index] ? ' style="text-align:' + aligns[index] + '"' : '');
+  const normalize = (cells) => {
+    const result = cells.slice(0, header.length);
+    while (result.length < header.length) result.push('');
+    return result;
+  };
+
+  const rows = [];
+  let i = start + 2;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (line.trim() === '' || !line.includes('|')) break;
+    if (isFence(line) || /^ {0,3}#{1,6}\s+/.test(line) || /^ {0,3}>\s?/.test(line) ||
+      /^ {0,3}([-+*]|\d+[.)])\s+/.test(line)) break;
+    rows.push(normalize(splitTableRow(line)));
+    i++;
+  }
+
+  let html = '<div class="table-wrap"><table><thead><tr>';
+  header.forEach((cell, index) => {
+    html += '<th' + alignAttr(index) + '>' + renderInline(cell) + '</th>';
+  });
+  html += '</tr></thead>';
+  if (rows.length > 0) {
+    html += '<tbody>';
+    for (const row of rows) {
+      html += '<tr>';
+      row.forEach((cell, index) => {
+        html += '<td' + alignAttr(index) + '>' + renderInline(cell) + '</td>';
+      });
+      html += '</tr>';
+    }
+    html += '</tbody>';
+  }
+  html += '</table></div>';
+  return { html, next: i };
 }
 
 function renderCodeBlock(code, rawInfo) {
@@ -297,6 +413,13 @@ export function renderMarkdown(source) {
         i++;
       }
       out.push('<blockquote>' + renderMarkdown(quote.join('\n')) + '</blockquote>');
+      continue;
+    }
+
+    if (tableAt(lines, i)) {
+      const table = renderTable(lines, i);
+      out.push(table.html);
+      i = table.next;
       continue;
     }
 
