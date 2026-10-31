@@ -1,6 +1,6 @@
 /** Conversation view, SSE streaming, composer, edit/regenerate, and Markdown actions. */
 
-import { renderMarkdown } from './markdown.js';
+import { escapeHTML, renderMarkdown } from './markdown.js';
 import { MarkdownComposer } from './composer.js';
 import { autoGrow, copyText, flashButton, formatTimestamp, icon, showToast } from './ui.js';
 
@@ -35,6 +35,8 @@ export class ChatView {
     this.messageEls = new Map();
     this.updateTimer = null;
     this.composer = new MarkdownComposer(elements.input);
+    this.searchEnabled = false;
+    this.webSearch = false;
 
     this.bind();
   }
@@ -59,6 +61,7 @@ export class ChatView {
       }
     });
     e.stop.addEventListener('click', () => this.stop());
+    e.searchToggle.addEventListener('click', () => this.toggleWebSearch());
     e.modelSelect.addEventListener('change', () => this.modelChanged());
     e.messages.addEventListener('click', (event) => this.messageAction(event));
     e.empty.addEventListener('click', (event) => {
@@ -188,6 +191,33 @@ export class ChatView {
     this.elements.send.disabled = !!this.stream || empty;
   }
 
+  setSearchEnabled(enabled) {
+    this.searchEnabled = !!enabled;
+    if (!this.searchEnabled) this.webSearch = false;
+    this.updateSearchToggle();
+  }
+
+  toggleWebSearch() {
+    if (!this.searchEnabled) return;
+    this.webSearch = !this.webSearch;
+    this.updateSearchToggle();
+  }
+
+  updateSearchToggle() {
+    const button = this.elements.searchToggle;
+    if (!button) return;
+    button.hidden = !this.searchEnabled;
+    button.disabled = !!this.stream;
+    button.setAttribute('aria-pressed', this.webSearch ? 'true' : 'false');
+    button.classList.toggle('active', this.webSearch);
+    button.title = this.webSearch ? 'Web search is on' : 'Search the web for this message';
+  }
+
+  withSearch(payload) {
+    if (this.webSearch && this.searchEnabled) payload.web_search = true;
+    return payload;
+  }
+
   setStreamingUI(streaming) {
     const e = this.elements;
     e.send.hidden = streaming;
@@ -198,6 +228,7 @@ export class ChatView {
     e.modelSelect.disabled = streaming;
     e.messages.setAttribute('aria-busy', streaming ? 'true' : 'false');
     e.form.classList.toggle('streaming', streaming);
+    this.updateSearchToggle();
     this.onGenerationChange(streaming);
   }
 
@@ -311,19 +342,19 @@ export class ChatView {
       payload.provider_id = this.selected.providerId;
       payload.model_id = this.selected.modelId;
     }
-    await this.runGeneration(payload, { newContent: content });
+    await this.runGeneration(this.withSearch(payload), { newContent: content });
   }
 
   async regenerate() {
     if (this.stream || !this.chat) return;
-    await this.runGeneration({ regenerate: true }, { regenerate: true });
+    await this.runGeneration(this.withSearch({ regenerate: true }), { regenerate: true });
   }
 
   async saveEdit(message, content) {
     if (this.stream || !this.chat) return;
     const value = content.trim();
     if (!value) return;
-    await this.runGeneration({ content: value, edit_message_id: message.id }, { editId: message.id, editContent: value });
+    await this.runGeneration(this.withSearch({ content: value, edit_message_id: message.id }), { editId: message.id, editContent: value });
   }
 
   async runGeneration(payload, options = {}) {
@@ -399,6 +430,17 @@ export class ChatView {
           this.onChatMeta(this.chat);
         }
         this.renderAll(false);
+      } else if (event === 'search') {
+        if (data.status === 'searching') {
+          assistant.searching = true;
+        } else if (data.status === 'done') {
+          assistant.searching = false;
+          assistant.sources = Array.isArray(data.results) ? data.results : [];
+        } else if (data.status === 'error') {
+          assistant.searching = false;
+          showToast('Web search failed: ' + (data.message || 'unknown error'), 'error');
+        }
+        this.scheduleAssistantUpdate(assistant, seq);
       } else if (event === 'delta') {
         if (typeof data.text !== 'string') return;
         assistant.content += data.text;
@@ -611,13 +653,28 @@ export class ChatView {
   }
 
   bodyHTML(message) {
+    const sources = this.sourcesHTML(message);
     if (message.status === 'streaming' && !message.content) {
-      return '<div class="thinking" aria-label="Waiting for the provider"><span></span><span></span><span></span><em>Thinking</em></div>';
+      const label = message.searching ? 'Searching the web' : 'Thinking';
+      return '<div class="thinking" aria-label="' + label + '"><span></span><span></span><span></span><em>' + label + '</em></div>' + sources;
     }
     if (!message.content) {
-      return '<p class="empty-message">No content.</p>';
+      return '<p class="empty-message">No content.</p>' + sources;
     }
-    return renderMarkdown(message.content);
+    return renderMarkdown(message.content) + sources;
+  }
+
+  sourcesHTML(message) {
+    const sources = Array.isArray(message.sources) ? message.sources : [];
+    const items = [];
+    for (const source of sources) {
+      const url = source && typeof source.url === 'string' ? source.url : '';
+      if (!/^https?:\/\//i.test(url)) continue;
+      const title = source && typeof source.title === 'string' && source.title ? source.title : url;
+      items.push('<li><a href="' + escapeHTML(url) + '" target="_blank" rel="noopener noreferrer nofollow">' + escapeHTML(title) + '</a></li>');
+    }
+    if (!items.length) return '';
+    return '<div class="message-sources"><span class="sources-label">Sources</span><ol>' + items.join('') + '</ol></div>';
   }
 
   fillStatus(element, message) {

@@ -115,6 +115,13 @@ training policies. libreAI does not run local inference and does not proxy
 requests through a third-party service other than the provider endpoint you
 configure.
 
+When web search is enabled, the newest user message is also sent to the
+configured search provider (Perplexity by default), and the resulting page
+snippets are sent to the chat provider along with the prompt. Search results
+are untrusted input: they are delimited in the prompt and labelled as reference
+material, but prompt injection from a malicious page cannot be fully prevented
+without model-side tool controls. Disable search for sensitive conversations.
+
 ## Known limitations
 
 - No accounts, roles, per-user isolation, or audit log.

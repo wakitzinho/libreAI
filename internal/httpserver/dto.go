@@ -1,6 +1,8 @@
 package httpserver
 
 import (
+	"encoding/json"
+	"strings"
 	"time"
 
 	"libreai/internal/provider"
@@ -26,13 +28,19 @@ type chatDTO struct {
 	ExpiresAt      string  `json:"expires_at"`
 }
 
+type sourceDTO struct {
+	Title string `json:"title"`
+	URL   string `json:"url"`
+}
+
 type messageDTO struct {
-	ID        int64  `json:"id"`
-	Role      string `json:"role"`
-	Content   string `json:"content"`
-	Status    string `json:"status"`
-	Error     string `json:"error,omitempty"`
-	CreatedAt string `json:"created_at"`
+	ID        int64       `json:"id"`
+	Role      string      `json:"role"`
+	Content   string      `json:"content"`
+	Status    string      `json:"status"`
+	Error     string      `json:"error,omitempty"`
+	Sources   []sourceDTO `json:"sources,omitempty"`
+	CreatedAt string      `json:"created_at"`
 }
 
 type chatDetailDTO struct {
@@ -55,10 +63,15 @@ type bootstrapDTO struct {
 	Defaults      defaultsDTO     `json:"defaults"`
 	HiddenModels  []string        `json:"hidden_models"`
 	Limits        limitsDTO       `json:"limits"`
+	Search        searchDTO       `json:"search"`
 }
 
 type limitsDTO struct {
 	MaxConcurrentGenerations int `json:"max_concurrent_generations"`
+}
+
+type searchDTO struct {
+	Enabled bool `json:"enabled"`
 }
 
 type settingsDTO struct {
@@ -97,8 +110,34 @@ func toChatDTO(c store.Chat, retentionDays int) chatDTO {
 func toMessageDTO(m store.Message) messageDTO {
 	return messageDTO{
 		ID: m.ID, Role: m.Role, Content: m.Content, Status: m.Status,
-		Error: m.Error, CreatedAt: isoTime(m.CreatedAt),
+		Error: m.Error, Sources: parseSources(m.Sources), CreatedAt: isoTime(m.CreatedAt),
 	}
+}
+
+// parseSources turns the stored JSON array into DTOs, dropping malformed
+// entries instead of failing the whole response.
+func parseSources(raw string) []sourceDTO {
+	if raw == "" {
+		return nil
+	}
+	var stored []sourceDTO
+	if err := json.Unmarshal([]byte(raw), &stored); err != nil {
+		return nil
+	}
+	out := make([]sourceDTO, 0, len(stored))
+	for _, s := range stored {
+		if len(s.URL) > 2000 || len(s.Title) > 300 {
+			continue
+		}
+		if !strings.HasPrefix(s.URL, "https://") && !strings.HasPrefix(s.URL, "http://") {
+			continue
+		}
+		out = append(out, s)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func toMessageDTOs(messages []store.Message) []messageDTO {

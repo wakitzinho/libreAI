@@ -44,6 +44,7 @@ const els = {
   composer: $('#composer-input'),
   send: $('#send-button'),
   stop: $('#stop-button'),
+  searchToggle: $('#web-search-toggle'),
   emptyRetentionNote: $('#empty-retention-note'),
   bootError: $('#boot-error'),
   bootErrorMessage: $('#boot-error-message'),
@@ -80,6 +81,7 @@ const chatView = new ChatView(
     input: els.composer,
     send: els.send,
     stop: els.stop,
+    searchToggle: els.searchToggle,
     modelSelect: els.modelSelect,
     title: els.title,
   },
@@ -156,6 +158,7 @@ function applyBootstrap(data) {
   sidebar.setData(state.projects, state.chats);
   chatView.setProviders(state.providers, state.hidden);
   chatView.setDefaults(state.defaults.providerId, state.defaults.modelId);
+  chatView.setSearchEnabled(!!(data.search && data.search.enabled));
   updateDocumentTitle();
 }
 

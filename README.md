@@ -18,6 +18,8 @@ path is a private Tailscale tailnet, not the public Internet.
 - Markdown and code-block rendering (headings, lists, tables, quotes, links)
   with an allowlist sanitizer, syntax highlighting, and copy buttons.
 - Projects, chat search, move/rename/delete, and Markdown/JSON export.
+- Optional web search through the Perplexity Search API, with a composer toggle
+  and saved source links. Works with every configured chat model.
 - Automatic deletion of chats inactive for 30 days (configurable), at startup
   and every six hours.
 - Catppuccin Mocha/Latte themes, system theme support, responsive mobile
@@ -288,14 +290,47 @@ discovery.
 The settings dialog stores the default provider/model and hidden models in the
 database. Theme and sidebar preferences are browser-local (`localStorage`).
 
+### Web search
+
+Web search is optional and off by default. When enabled, the composer shows a
+**Search** toggle. Turning it on for a message makes the server query the
+[Perplexity Search API](https://docs.perplexity.ai/docs/search/quickstart) for
+the newest user message, prepend the ranked results to that message as
+delimited reference text, and save the source links with the reply.
+
+This works with **every** chat model, including local ones, because the results
+are ordinary prompt text; the model does not need native search or tool-calling
+support. The trade-off is that search runs once per enabled message, before the
+model call, rather than the model deciding when to search.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `SEARCH_ENABLED` | `false` | Show the composer toggle and allow `web_search` requests. |
+| `SEARCH_BASE_URL` | `https://api.perplexity.ai` | Search API base URL. |
+| `SEARCH_API_KEY` | — | Perplexity API key. Required when search is enabled. |
+| `SEARCH_MAX_RESULTS` | `5` | Results per search (1–20). |
+| `SEARCH_TIMEOUT_SECONDS` | `10` | Search request timeout (2–60). |
+| `SEARCH_MAX_BYTES` | `12000` | Maximum injected result text per message (512–100000). |
+
+Search settings are server-level: saving them in the `.env` editor requires a
+restart, and the toggle stays hidden until then. If a search fails or times
+out, the reply is generated without search and the interface shows the error;
+the generation is never aborted.
+
+Each result's page text is capped at about 1.2 KB and the whole injected block
+at `SEARCH_MAX_BYTES`. Lower that limit for models with small context windows.
+
+Web search sends the user's message text to Perplexity and page snippets to the
+configured chat provider. Keep that in mind for sensitive conversations.
+
 ### Editing `.env` from Settings
 
 The **Settings → Models & providers** editor loads the same `.env` file passed
 with `-env` (or `ENV_FILE`). Add or change `PROVIDER_*` variables there, then
 choose **Save .env**. Provider and manual model changes are applied immediately
 by swapping the in-memory provider registry. Server-level options such as
-`HOST`, `PORT`, `DATABASE_PATH`, and `CHAT_RETENTION_DAYS` still take effect
-only after a restart.
+`HOST`, `PORT`, `DATABASE_PATH`, `CHAT_RETENTION_DAYS`, and `SEARCH_*` still
+take effect only after a restart.
 
 Existing API keys and custom `HEADERS` values are replaced in the editor with
 `__LIBREAI_KEEP_SECRET__`. Leaving the placeholder unchanged preserves the
@@ -792,6 +827,7 @@ request bodies, query strings, headers, prompts, or API keys.
 cmd/libreai/            server entrypoint, flags, shutdown, health check
 internal/config/        .env parsing, validation, provider configuration
 internal/provider/      OpenAI-compatible client, SSE decoder, discovery
+internal/websearch/     Perplexity Search API client and prompt formatting
 internal/store/         SQLite schema, migrations, CRUD, recovery
 internal/retention/     periodic 30-day chat cleanup
 internal/httpserver/    JSON API, SSE endpoint, static assets, security

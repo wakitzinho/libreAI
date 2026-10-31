@@ -31,6 +31,11 @@ type testEnv struct {
 
 func newTestEnv(t *testing.T, providerHandler http.HandlerFunc, models ...string) *testEnv {
 	t.Helper()
+	return newTestEnvWithConfig(t, providerHandler, nil, models...)
+}
+
+func newTestEnvWithConfig(t *testing.T, providerHandler http.HandlerFunc, mutate func(*config.Config), models ...string) *testEnv {
+	t.Helper()
 	if len(models) == 0 {
 		models = []string{"test-model"}
 	}
@@ -59,6 +64,9 @@ func newTestEnv(t *testing.T, providerHandler http.HandlerFunc, models ...string
 			BaseURL: providerSrv.URL, APIKey: "sk-super-secret",
 			Enabled: true, Discovery: true, Models: models,
 		}},
+	}
+	if mutate != nil {
+		mutate(&cfg)
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	reg := provider.NewRegistry(cfg, logger)
@@ -780,4 +788,185 @@ func TestMissingChat(t *testing.T) {
 		t.Fatalf("missing chat status = %d", resp.StatusCode)
 	}
 	resp.Body.Close()
+}
+
+func createTestChat(t *testing.T, env *testEnv) chatDTO {
+	t.Helper()
+	resp := env.request(t, "POST", "/api/chats", `{}`, nil)
+	if resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("create chat status = %d: %s", resp.StatusCode, body)
+	}
+	return readJSON[chatEnvelope](t, resp).Chat
+}
+
+func TestWebSearchInjectsResultsAndPersistsSources(t *testing.T) {
+	var searchQueries []string
+	searchSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/search" {
+			http.NotFound(w, r)
+			return
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer pplx-test" {
+			t.Errorf("search authorization = %q", got)
+		}
+		var req struct {
+			Query      string `json:"query"`
+			MaxResults int    `json:"max_results"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("decode search request: %v", err)
+		}
+		if req.MaxResults != 3 {
+			t.Errorf("search max_results = %d", req.MaxResults)
+		}
+		searchQueries = append(searchQueries, req.Query)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"results":[{"title":"Go downloads","url":"https://go.dev/dl/","snippet":"Go 1.27 is the current release.","date":"2026-10-01"}]}`))
+	}))
+	defer searchSrv.Close()
+
+	var upstreamPrompt string
+	env := newTestEnvWithConfig(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			http.NotFound(w, r)
+			return
+		}
+		var req upstreamChatRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("decode upstream request: %v", err)
+		}
+		if len(req.Messages) > 0 {
+			upstreamPrompt = req.Messages[len(req.Messages)-1].Content
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"Go 1.27\"}}]}\n\n")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}, func(cfg *config.Config) {
+		cfg.SearchEnabled = true
+		cfg.SearchBaseURL = searchSrv.URL
+		cfg.SearchAPIKey = "pplx-test"
+		cfg.SearchMaxResults = 3
+		cfg.SearchTimeout = 5 * time.Second
+		cfg.SearchMaxBytes = 12000
+	})
+
+	chat := createTestChat(t, env)
+	resp := env.request(t, "POST", "/api/chats/"+chat.ID+"/messages",
+		`{"content":"what is the latest Go release?","web_search":true}`, nil)
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("message status = %d: %s", resp.StatusCode, body)
+	}
+	events := readSSE(t, resp)
+	if len(events) != 5 {
+		t.Fatalf("events = %+v", events)
+	}
+	want := []string{"meta", "search", "search", "delta", "done"}
+	for i, name := range want {
+		if events[i].Event != name {
+			t.Fatalf("event %d = %q, want %q (%+v)", i, events[i].Event, name, events)
+		}
+	}
+	if events[1].Data["status"] != "searching" || events[2].Data["status"] != "done" {
+		t.Fatalf("search events = %+v", events[1:3])
+	}
+	results, ok := events[2].Data["results"].([]any)
+	if !ok || len(results) != 1 {
+		t.Fatalf("search results = %#v", events[2].Data["results"])
+	}
+	if len(searchQueries) != 1 || searchQueries[0] != "what is the latest Go release?" {
+		t.Fatalf("search queries = %v", searchQueries)
+	}
+
+	for _, want := range []string{
+		`<web_search_results query="what is the latest Go release?">`,
+		"[1] Go downloads (2026-10-01)",
+		"URL: https://go.dev/dl/",
+		"Go 1.27 is the current release.",
+		"what is the latest Go release?",
+	} {
+		if !strings.Contains(upstreamPrompt, want) {
+			t.Fatalf("upstream prompt missing %q:\n%s", want, upstreamPrompt)
+		}
+	}
+	if !strings.HasSuffix(upstreamPrompt, "what is the latest Go release?") {
+		t.Fatalf("user message is not last in the prompt:\n%s", upstreamPrompt)
+	}
+
+	resp = env.request(t, "GET", "/api/chats/"+chat.ID, "", nil)
+	detail := readJSON[chatDetailDTO](t, resp)
+	if len(detail.Messages) != 2 {
+		t.Fatalf("messages = %+v", detail.Messages)
+	}
+	if detail.Messages[0].Content != "what is the latest Go release?" {
+		t.Fatalf("stored user content = %q", detail.Messages[0].Content)
+	}
+	if len(detail.Messages[1].Sources) != 1 || detail.Messages[1].Sources[0].URL != "https://go.dev/dl/" {
+		t.Fatalf("stored sources = %+v", detail.Messages[1].Sources)
+	}
+}
+
+func TestWebSearchFailureDoesNotAbortGeneration(t *testing.T) {
+	searchSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = io.WriteString(w, `{"message":"search is down"}`)
+	}))
+	defer searchSrv.Close()
+
+	env := newTestEnvWithConfig(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"Plain answer\"}}]}\n\n")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}, func(cfg *config.Config) {
+		cfg.SearchEnabled = true
+		cfg.SearchBaseURL = searchSrv.URL
+		cfg.SearchAPIKey = "pplx-test"
+		cfg.SearchMaxResults = 5
+		cfg.SearchTimeout = 5 * time.Second
+		cfg.SearchMaxBytes = 12000
+	})
+
+	chat := createTestChat(t, env)
+	resp := env.request(t, "POST", "/api/chats/"+chat.ID+"/messages",
+		`{"content":"hello","web_search":true}`, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("message status = %d", resp.StatusCode)
+	}
+	events := readSSE(t, resp)
+	if len(events) != 5 || events[2].Event != "search" || events[2].Data["status"] != "error" {
+		t.Fatalf("events = %+v", events)
+	}
+	if events[3].Event != "delta" || events[3].Data["text"] != "Plain answer" || events[4].Event != "done" {
+		t.Fatalf("generation did not continue: %+v", events)
+	}
+	if msg, _ := events[2].Data["message"].(string); !strings.Contains(msg, "HTTP 500") {
+		t.Fatalf("search error message = %q", msg)
+	}
+
+	resp = env.request(t, "GET", "/api/chats/"+chat.ID, "", nil)
+	detail := readJSON[chatDetailDTO](t, resp)
+	if len(detail.Messages) != 2 || len(detail.Messages[1].Sources) != 0 {
+		t.Fatalf("stored messages = %+v", detail.Messages)
+	}
+}
+
+func TestWebSearchRejectedWhenNotConfigured(t *testing.T) {
+	env := newTestEnv(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("upstream provider should not be contacted")
+		http.NotFound(w, r)
+	})
+	chat := createTestChat(t, env)
+	resp := env.request(t, "POST", "/api/chats/"+chat.ID+"/messages",
+		`{"content":"hello","web_search":true}`, nil)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if !strings.Contains(string(body), "web_search_unavailable") {
+		t.Fatalf("body = %s", body)
+	}
 }

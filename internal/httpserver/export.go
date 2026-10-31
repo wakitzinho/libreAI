@@ -101,6 +101,17 @@ func (s *Server) handleExportChat(w http.ResponseWriter, r *http.Request) {
 		}
 		fmt.Fprintf(&b, "\n## %s · %s\n\n", role, isoTime(m.CreatedAt))
 		b.WriteString(m.Content)
+		if sources := parseSources(m.Sources); len(sources) > 0 {
+			b.WriteString("\n\n**Sources**\n\n")
+			for _, source := range sources {
+				title := strings.NewReplacer("[", "(", "]", ")", "\r", " ", "\n", " ").Replace(source.Title)
+				if strings.ContainsAny(source.URL, "<> \t\r\n") {
+					fmt.Fprintf(&b, "- %s — %s\n", title, source.URL)
+					continue
+				}
+				fmt.Fprintf(&b, "- [%s](<%s>)\n", title, source.URL)
+			}
+		}
 		if m.Status != "completed" {
 			fmt.Fprintf(&b, "\n\n> Status: %s", m.Status)
 			if m.Error != "" {

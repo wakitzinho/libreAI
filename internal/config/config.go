@@ -29,6 +29,10 @@ const (
 	DefaultMaxContextMessages = 200
 	DefaultMaxContextBytes    = 400_000
 	DefaultShutdownTimeout    = 15 * time.Second
+	DefaultSearchBaseURL      = "https://api.perplexity.ai"
+	DefaultSearchMaxResults   = 5
+	DefaultSearchTimeout      = 10 * time.Second
+	DefaultSearchMaxBytes     = 12_000
 )
 
 // Provider is one statically configured OpenAI-compatible provider.
@@ -98,7 +102,15 @@ type Config struct {
 	MaxContextBytes          int
 	ShutdownTimeout          time.Duration
 	LogLevel                 string
-	Providers                []Provider
+	// Search configures the Perplexity Search API used by the composer's web
+	// search toggle. SearchAPIKey is never serialized or logged.
+	SearchEnabled    bool
+	SearchBaseURL    string
+	SearchAPIKey     string
+	SearchMaxResults int
+	SearchTimeout    time.Duration
+	SearchMaxBytes   int
+	Providers        []Provider
 	// EnvFile is the .env path this configuration was loaded from. It is used
 	// by the settings editor and is never exposed as a configurable value.
 	EnvFile string
@@ -118,6 +130,11 @@ func (c Config) ProviderByID(id string) (Provider, bool) {
 		}
 	}
 	return Provider{}, false
+}
+
+// SearchConfigured reports whether the web search client can be used.
+func (c Config) SearchConfigured() bool {
+	return c.SearchEnabled && c.SearchBaseURL != "" && c.SearchAPIKey != ""
 }
 
 // Load reads envFile (if it exists), overlays the process environment, and
@@ -199,6 +216,10 @@ func FromMap(values map[string]string) (Config, []string, error) {
 		MaxContextBytes:          DefaultMaxContextBytes,
 		ShutdownTimeout:          DefaultShutdownTimeout,
 		LogLevel:                 "info",
+		SearchBaseURL:            DefaultSearchBaseURL,
+		SearchMaxResults:         DefaultSearchMaxResults,
+		SearchTimeout:            DefaultSearchTimeout,
+		SearchMaxBytes:           DefaultSearchMaxBytes,
 	}
 	var errs []string
 	var warnings []string
@@ -290,6 +311,58 @@ func FromMap(values map[string]string) (Config, []string, error) {
 			cfg.LogLevel = lv
 		default:
 			errs = append(errs, "LOG_LEVEL must be one of debug, info, warn, error")
+		}
+	}
+
+	if v, ok := values["SEARCH_ENABLED"]; ok && strings.TrimSpace(v) != "" {
+		b, err := parseBool(v)
+		if err != nil {
+			errs = append(errs, "SEARCH_ENABLED must be true or false")
+		} else {
+			cfg.SearchEnabled = b
+		}
+	}
+	if v, ok := values["SEARCH_BASE_URL"]; ok && strings.TrimSpace(v) != "" {
+		cfg.SearchBaseURL = strings.TrimRight(strings.TrimSpace(v), "/")
+	}
+	if cfg.SearchBaseURL != "" {
+		if err := validateBaseURL(cfg.SearchBaseURL); err != nil {
+			errs = append(errs, "SEARCH_BASE_URL "+err.Error())
+		}
+	}
+	cfg.SearchAPIKey = strings.TrimSpace(values["SEARCH_API_KEY"])
+	if strings.ContainsAny(cfg.SearchAPIKey, "\r\n\x00") {
+		errs = append(errs, "SEARCH_API_KEY contains invalid control characters")
+		cfg.SearchAPIKey = ""
+	}
+	if cfg.SearchEnabled && cfg.SearchAPIKey == "" {
+		errs = append(errs, "SEARCH_API_KEY is required when SEARCH_ENABLED is true")
+	}
+	if !cfg.SearchEnabled && cfg.SearchAPIKey != "" {
+		warnings = append(warnings, "SEARCH_API_KEY is set but SEARCH_ENABLED is false")
+	}
+	if v, ok := values["SEARCH_MAX_RESULTS"]; ok && strings.TrimSpace(v) != "" {
+		n, err := strconv.Atoi(strings.TrimSpace(v))
+		if err != nil || n < 1 || n > 20 {
+			errs = append(errs, "SEARCH_MAX_RESULTS must be an integer between 1 and 20")
+		} else {
+			cfg.SearchMaxResults = n
+		}
+	}
+	if v, ok := values["SEARCH_TIMEOUT_SECONDS"]; ok && strings.TrimSpace(v) != "" {
+		n, err := strconv.Atoi(strings.TrimSpace(v))
+		if err != nil || n < 2 || n > 60 {
+			errs = append(errs, "SEARCH_TIMEOUT_SECONDS must be an integer between 2 and 60")
+		} else {
+			cfg.SearchTimeout = time.Duration(n) * time.Second
+		}
+	}
+	if v, ok := values["SEARCH_MAX_BYTES"]; ok && strings.TrimSpace(v) != "" {
+		n, err := strconv.Atoi(strings.TrimSpace(v))
+		if err != nil || n < 512 || n > 100_000 {
+			errs = append(errs, "SEARCH_MAX_BYTES must be between 512 and 100000")
+		} else {
+			cfg.SearchMaxBytes = n
 		}
 	}
 

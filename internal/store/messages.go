@@ -8,11 +8,11 @@ import (
 	"strings"
 )
 
-const messageColumns = "id, chat_id, role, content, status, error, created_at, updated_at"
+const messageColumns = "id, chat_id, role, content, status, error, sources, created_at, updated_at"
 
 func scanMessage(row interface{ Scan(...any) error }) (Message, error) {
 	var m Message
-	err := row.Scan(&m.ID, &m.ChatID, &m.Role, &m.Content, &m.Status, &m.Error, &m.CreatedAt, &m.UpdatedAt)
+	err := row.Scan(&m.ID, &m.ChatID, &m.Role, &m.Content, &m.Status, &m.Error, &m.Sources, &m.CreatedAt, &m.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Message{}, ErrNotFound
 	}
@@ -120,15 +120,15 @@ func (s *Store) AddAssistantPlaceholder(ctx context.Context, chatID string) (Mes
 	return Message{ID: id, ChatID: chatID, Role: "assistant", Content: "", Status: "streaming", CreatedAt: now, UpdatedAt: now}, nil
 }
 
-func (s *Store) UpdateMessage(ctx context.Context, messageID int64, content, status, errText string) error {
+func (s *Store) UpdateMessage(ctx context.Context, messageID int64, content, status, errText, sources string) error {
 	switch status {
 	case "completed", "streaming", "error", "cancelled", "interrupted":
 	default:
 		return fmt.Errorf("%w: invalid message status", ErrInvalid)
 	}
 	res, err := s.db.ExecContext(ctx,
-		"UPDATE messages SET content = ?, status = ?, error = ?, updated_at = ? WHERE id = ?",
-		content, status, errText, NowMillis(), messageID)
+		"UPDATE messages SET content = ?, status = ?, error = ?, sources = ?, updated_at = ? WHERE id = ?",
+		content, status, errText, sources, NowMillis(), messageID)
 	if err != nil {
 		return err
 	}

@@ -266,5 +266,11 @@ func configNeedsRestart(old, next config.Config) bool {
 		old.MaxContextMessages != next.MaxContextMessages ||
 		old.MaxContextBytes != next.MaxContextBytes ||
 		old.ShutdownTimeout != next.ShutdownTimeout ||
-		old.LogLevel != next.LogLevel
+		old.LogLevel != next.LogLevel ||
+		old.SearchEnabled != next.SearchEnabled ||
+		old.SearchBaseURL != next.SearchBaseURL ||
+		old.SearchAPIKey != next.SearchAPIKey ||
+		old.SearchMaxResults != next.SearchMaxResults ||
+		old.SearchTimeout != next.SearchTimeout ||
+		old.SearchMaxBytes != next.SearchMaxBytes
 }

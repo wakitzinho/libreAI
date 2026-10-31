@@ -25,6 +25,11 @@
       <circle cx="10.5" cy="10.5" r="6.5"/>
       <path d="M15.5 15.5L20 20"/>
     </symbol>
+    <symbol id="icon-globe" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="9"/>
+      <path d="M3 12h18"/>
+      <path d="M12 3c2.5 2.4 4 5.6 4 9s-1.5 6.6-4 9c-2.5-2.4-4-5.6-4-9s1.5-6.6 4-9Z"/>
+    </symbol>
     <symbol id="icon-settings" viewBox="0 0 24 24">
       <circle cx="12" cy="12" r="3"/>
       <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6h.09A1.7 1.7 0 0 0 10 3.05V3a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15 4.6a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9v.09A1.7 1.7 0 0 0 20.95 10H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1Z"/>
@@ -185,6 +190,10 @@
           <div id="composer-input" class="composer-input" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Message libreAI" data-placeholder="Message libreAI…" spellcheck="true"></div>
           <div class="composer-bar">
             <span class="composer-hint">Enter to send · Shift + Enter for a new line</span>
+            <button id="web-search-toggle" class="search-toggle" type="button" aria-pressed="false" aria-label="Search the web for this message" title="Search the web for this message" hidden>
+              <svg class="icon" aria-hidden="true"><use href="#icon-globe"></use></svg>
+              <span>Search</span>
+            </button>
             <button id="send-button" class="send-button" type="submit" aria-label="Send message" title="Send message" disabled>
               <svg class="icon" aria-hidden="true"><use href="#icon-send"></use></svg>
             </button>

@@ -11,6 +11,7 @@ import (
 
 	"libreai/internal/provider"
 	"libreai/internal/store"
+	"libreai/internal/websearch"
 )
 
 const maxMessageBytes = 100_000
@@ -21,6 +22,7 @@ type sendMessageRequest struct {
 	Regenerate    bool   `json:"regenerate"`
 	ProviderID    string `json:"provider_id"`
 	ModelID       string `json:"model_id"`
+	WebSearch     bool   `json:"web_search"`
 }
 
 func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
@@ -55,6 +57,10 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.EditMessageID != nil && *req.EditMessageID <= 0 {
 		writeError(w, http.StatusBadRequest, "invalid_message", "Invalid message identifier.")
+		return
+	}
+	if req.WebSearch && s.search == nil {
+		writeError(w, http.StatusBadRequest, "web_search_unavailable", "Web search is not configured on this server.")
 		return
 	}
 
@@ -169,7 +175,7 @@ func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	chat.Title = title
-	s.streamCompletion(w, r, chat, assistant, contextMessages, providerID, modelID)
+	s.streamCompletion(w, r, chat, assistant, contextMessages, providerID, modelID, req.WebSearch)
 }
 
 func (s *Server) resolveSelection(ctx context.Context, chat store.Chat, req sendMessageRequest) (string, string, error) {
@@ -300,7 +306,7 @@ func (s *Server) finishChat(chatID string) {
 	s.activeMu.Unlock()
 }
 
-func (s *Server) streamCompletion(w http.ResponseWriter, r *http.Request, chat store.Chat, assistant store.Message, messages []provider.ChatMessage, providerID, modelID string) {
+func (s *Server) streamCompletion(w http.ResponseWriter, r *http.Request, chat store.Chat, assistant store.Message, messages []provider.ChatMessage, providerID, modelID string, webSearch bool) {
 	reg := s.registry()
 	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache, no-transform")
@@ -316,15 +322,20 @@ func (s *Server) streamCompletion(w http.ResponseWriter, r *http.Request, chat s
 		"model_id":             modelID,
 	}
 	if err := writeSSE(w, rc, "meta", meta); err != nil {
-		s.persistFinal(assistant.ID, "", "cancelled", "Connection closed before generation started.")
+		s.persistFinal(assistant.ID, "", "cancelled", "Connection closed before generation started.", "")
 		return
 	}
 
 	client, ok := reg.GetClient(providerID)
 	if !ok {
 		_ = writeSSE(w, rc, "error", map[string]any{"code": "provider_unavailable", "message": "Provider is no longer available.", "message_id": assistant.ID, "status": "error"})
-		s.persistFinal(assistant.ID, "", "error", "Provider is no longer available.")
+		s.persistFinal(assistant.ID, "", "error", "Provider is no longer available.", "")
 		return
+	}
+
+	sourcesJSON := ""
+	if webSearch && s.search != nil {
+		messages, sourcesJSON = s.prepareWebSearch(w, rc, r.Context(), messages)
 	}
 
 	timeout := reg.Timeout(providerID, s.cfg.UpstreamTimeout)
@@ -378,7 +389,7 @@ func (s *Server) streamCompletion(w http.ResponseWriter, r *http.Request, chat s
 			"error", reg.Redact(genErr.Error()))
 	}
 
-	if !s.persistFinal(assistant.ID, text, status, errorMessage) {
+	if !s.persistFinal(assistant.ID, text, status, errorMessage, sourcesJSON) {
 		status = "error"
 		code = "persist_failed"
 		errorMessage = "The response could not be saved to the database."
@@ -402,18 +413,61 @@ func (s *Server) streamCompletion(w http.ResponseWriter, r *http.Request, chat s
 	})
 }
 
+// prepareWebSearch runs a web search for the newest user message and prepends
+// the results to it. Search failures are reported to the client as a status
+// event and never abort the generation.
+func (s *Server) prepareWebSearch(w http.ResponseWriter, rc *http.ResponseController, parent context.Context, messages []provider.ChatMessage) ([]provider.ChatMessage, string) {
+	if len(messages) == 0 {
+		return messages, ""
+	}
+	query := strings.TrimSpace(messages[len(messages)-1].Content)
+	if query == "" {
+		return messages, ""
+	}
+	if err := writeSSE(w, rc, "search", map[string]any{"status": "searching"}); err != nil {
+		return messages, ""
+	}
+	ctx, cancel := context.WithTimeout(parent, s.cfg.SearchTimeout)
+	defer cancel()
+	results, err := s.search.Search(ctx, query)
+	if err != nil {
+		s.logger.Warn("web search failed", "error", err.Error())
+		_ = writeSSE(w, rc, "search", map[string]any{"status": "error", "message": websearch.SafeMessage(err)})
+		return messages, ""
+	}
+	block := websearch.BuildContext(query, results, s.cfg.SearchMaxBytes)
+	if block != "" {
+		updated := make([]provider.ChatMessage, len(messages))
+		copy(updated, messages)
+		last := &updated[len(updated)-1]
+		last.Content = block + "\n\n" + last.Content
+		messages = updated
+	}
+	sources := sourcesDTOs(results)
+	_ = writeSSE(w, rc, "search", map[string]any{"status": "done", "results": sources})
+	return messages, websearch.SourcesJSON(results)
+}
+
+func sourcesDTOs(results []websearch.Result) []sourceDTO {
+	out := make([]sourceDTO, 0, len(results))
+	for _, r := range results {
+		out = append(out, sourceDTO{Title: r.Title, URL: r.URL})
+	}
+	return out
+}
+
 func (s *Server) persistProgress(messageID int64, content string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 	defer cancel()
-	if err := s.store.UpdateMessage(ctx, messageID, content, "streaming", ""); err != nil {
+	if err := s.store.UpdateMessage(ctx, messageID, content, "streaming", "", ""); err != nil {
 		s.logger.Warn("could not persist streaming progress", "error", s.registry().Redact(err.Error()))
 	}
 }
 
-func (s *Server) persistFinal(messageID int64, content, status, errorMessage string) bool {
+func (s *Server) persistFinal(messageID int64, content, status, errorMessage, sources string) bool {
 	for attempt := 0; attempt < 2; attempt++ {
 		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-		err := s.store.UpdateMessage(ctx, messageID, content, status, errorMessage)
+		err := s.store.UpdateMessage(ctx, messageID, content, status, errorMessage, sources)
 		cancel()
 		if err == nil {
 			return true

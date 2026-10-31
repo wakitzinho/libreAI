@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -188,16 +189,20 @@ func TestMessagesEditRegenerateAndRecover(t *testing.T) {
 	if a1.Status != "streaming" {
 		t.Fatalf("placeholder status = %q", a1.Status)
 	}
-	if err := s.UpdateMessage(ctx, a1.ID, "answer one", "completed", ""); err != nil {
+	if err := s.UpdateMessage(ctx, a1.ID, "answer one", "completed", "", `[{"title":"Example","url":"https://example.com"}]`); err != nil {
 		t.Fatal(err)
 	}
 	u2, _ := s.AddUserMessage(ctx, chat.ID, "second")
 	a2, _ := s.AddAssistantPlaceholder(ctx, chat.ID)
-	if err := s.UpdateMessage(ctx, a2.ID, "partial", "cancelled", "stopped"); err != nil {
+	if err := s.UpdateMessage(ctx, a2.ID, "partial", "cancelled", "stopped", ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.UpdateMessage(ctx, a2.ID, "partial", "bogus", ""); !errors.Is(err, ErrInvalid) {
+	if err := s.UpdateMessage(ctx, a2.ID, "partial", "bogus", "", ""); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("invalid status error = %v", err)
+	}
+	stored, err := s.GetMessage(ctx, chat.ID, a1.ID)
+	if err != nil || !strings.Contains(stored.Sources, "https://example.com") {
+		t.Fatalf("stored sources = %+v, %v", stored, err)
 	}
 
 	// Editing the first user message removes everything after it.
@@ -218,7 +223,7 @@ func TestMessagesEditRegenerateAndRecover(t *testing.T) {
 
 	// Regeneration deletes only a trailing assistant message.
 	a3, _ := s.AddAssistantPlaceholder(ctx, chat.ID)
-	if err := s.UpdateMessage(ctx, a3.ID, "answer", "completed", ""); err != nil {
+	if err := s.UpdateMessage(ctx, a3.ID, "answer", "completed", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	deleted, err := s.DeleteLastAssistant(ctx, chat.ID)
@@ -373,5 +378,53 @@ func TestConcurrentAccess(t *testing.T) {
 	list, err := s.ListChats(ctx, "", 100)
 	if err != nil || len(list) != workers*5 {
 		t.Fatalf("chats = %d, %v", len(list), err)
+	}
+}
+
+func TestMessageSourcesMigrationFromOlderDatabase(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "libreai.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	ctx := context.Background()
+	chat, err := s.CreateChat(ctx, "Old chat", nil, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg, err := s.AddUserMessage(ctx, chat.ID, "kept content")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate a database created before migration 0002.
+	if _, err := s.db.Exec("ALTER TABLE messages DROP COLUMN sources"); err != nil {
+		t.Fatalf("drop sources: %v", err)
+	}
+	if _, err := s.db.Exec("DELETE FROM schema_migrations WHERE version = 2"); err != nil {
+		t.Fatalf("reset migration: %v", err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	s, err = Open(path)
+	if err != nil {
+		t.Fatalf("reopen after migration: %v", err)
+	}
+	defer s.Close()
+	messages, err := s.ListMessages(ctx, chat.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != 1 || messages[0].Content != "kept content" || messages[0].Sources != "" {
+		t.Fatalf("migrated messages = %+v", messages)
+	}
+	if err := s.UpdateMessage(ctx, msg.ID, "kept content", "completed", "", `[{"title":"T","url":"https://example.com"}]`); err != nil {
+		t.Fatalf("UpdateMessage after migration: %v", err)
+	}
+	stored, err := s.GetMessage(ctx, chat.ID, msg.ID)
+	if err != nil || !strings.Contains(stored.Sources, "https://example.com") {
+		t.Fatalf("stored message = %+v, %v", stored, err)
 	}
 }

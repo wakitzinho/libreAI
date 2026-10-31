@@ -29,5 +29,6 @@ func (s *Server) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 		Defaults:      defaultsDTO{ProviderID: settings.DefaultProvider, ModelID: settings.DefaultModel},
 		HiddenModels:  settings.HiddenModels,
 		Limits:        limitsDTO{MaxConcurrentGenerations: s.cfg.MaxConcurrentGenerations},
+		Search:        searchDTO{Enabled: s.search != nil},
 	})
 }

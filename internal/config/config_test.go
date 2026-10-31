@@ -64,6 +64,71 @@ func TestInvalidConfiguration(t *testing.T) {
 	}
 }
 
+func TestSearchConfiguration(t *testing.T) {
+	cfg, warnings, err := FromMap(map[string]string{})
+	if err != nil {
+		t.Fatalf("FromMap: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("unexpected warnings: %v", warnings)
+	}
+	if cfg.SearchEnabled || cfg.SearchConfigured() {
+		t.Fatal("web search should be disabled by default")
+	}
+	if cfg.SearchBaseURL != DefaultSearchBaseURL || cfg.SearchMaxResults != 5 ||
+		cfg.SearchTimeout != 10*time.Second || cfg.SearchMaxBytes != 12000 {
+		t.Fatalf("unexpected search defaults: %+v", cfg)
+	}
+
+	cfg, warnings, err = FromMap(map[string]string{
+		"SEARCH_ENABLED":         "true",
+		"SEARCH_API_KEY":         "pplx-test",
+		"SEARCH_MAX_RESULTS":     "8",
+		"SEARCH_TIMEOUT_SECONDS": "20",
+		"SEARCH_MAX_BYTES":       "20000",
+	})
+	if err != nil || len(warnings) != 0 {
+		t.Fatalf("FromMap = %v, %v", err, warnings)
+	}
+	if !cfg.SearchConfigured() || cfg.SearchMaxResults != 8 ||
+		cfg.SearchTimeout != 20*time.Second || cfg.SearchMaxBytes != 20000 {
+		t.Fatalf("search config = %+v", cfg)
+	}
+
+	if _, _, err := FromMap(map[string]string{"SEARCH_ENABLED": "true"}); err == nil ||
+		!strings.Contains(err.Error(), "SEARCH_API_KEY") {
+		t.Fatalf("missing key error = %v", err)
+	}
+
+	_, warnings, err = FromMap(map[string]string{"SEARCH_API_KEY": "pplx-test"})
+	if err != nil {
+		t.Fatalf("FromMap: %v", err)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "SEARCH_ENABLED") {
+		t.Fatalf("warnings = %v", warnings)
+	}
+
+	tests := []struct {
+		name   string
+		values map[string]string
+		want   string
+	}{
+		{"bad base url", map[string]string{"SEARCH_BASE_URL": "ftp://example.com"}, "SEARCH_BASE_URL"},
+		{"bad max results", map[string]string{"SEARCH_MAX_RESULTS": "50"}, "SEARCH_MAX_RESULTS"},
+		{"bad timeout", map[string]string{"SEARCH_TIMEOUT_SECONDS": "1"}, "SEARCH_TIMEOUT_SECONDS"},
+		{"bad max bytes", map[string]string{"SEARCH_MAX_BYTES": "10"}, "SEARCH_MAX_BYTES"},
+		{"bad enabled", map[string]string{"SEARCH_ENABLED": "maybe"}, "SEARCH_ENABLED"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := FromMap(tt.values)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error = %v, want containing %q", err, tt.want)
+			}
+		})
+	}
+}
+
 func TestProviderConfiguration(t *testing.T) {
 	cfg, warnings, err := FromMap(map[string]string{
 		"PROVIDER_GROQ_ENABLED":         "true",

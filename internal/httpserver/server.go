@@ -24,6 +24,7 @@ import (
 	"libreai/internal/config"
 	"libreai/internal/provider"
 	"libreai/internal/store"
+	"libreai/internal/websearch"
 	"libreai/web"
 )
 
@@ -32,6 +33,7 @@ type Server struct {
 	cfg       config.Config
 	store     *store.Store
 	providers *provider.Registry
+	search    *websearch.Client
 	logger    *slog.Logger
 	version   string
 	mux       *http.ServeMux
@@ -68,6 +70,18 @@ func New(cfg config.Config, st *store.Store, providers *provider.Registry, versi
 	}
 	if err := s.loadAssets(); err != nil {
 		return nil, err
+	}
+	if cfg.SearchConfigured() {
+		// Hand-built Config values (tests, embedders) may omit the tuning
+		// fields; use the documented defaults instead of a zero timeout that
+		// would fail every search or a zero budget that would inject nothing.
+		if s.cfg.SearchTimeout <= 0 {
+			s.cfg.SearchTimeout = config.DefaultSearchTimeout
+		}
+		if s.cfg.SearchMaxBytes < 256 {
+			s.cfg.SearchMaxBytes = config.DefaultSearchMaxBytes
+		}
+		s.search = websearch.New(cfg.SearchBaseURL, cfg.SearchAPIKey, cfg.SearchMaxResults, s.cfg.SearchTimeout)
 	}
 	s.routes()
 	return s, nil
