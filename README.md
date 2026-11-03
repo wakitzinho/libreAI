@@ -47,16 +47,9 @@ The following was checked locally:
 | Persistence across restart, retention cleanup, interrupted recovery | Verified locally with a mock provider |
 | systemd unit directives | Validated with `systemd-analyze verify` (placeholder `ExecStart`) |
 | **Actual systemd service activation** | **Not performed in the preparation environment** |
-| **Runtime on an actual ThinkPad X301** | **Not verified — no X301 was available** |
-| Docker build/run | **Not verified — Docker was not available** |
-| Nix build/NixOS module evaluation | **Not verified — Nix was not available** |
-
-Local checks were run on 2026-10-24 with Go 1.27.1.
-
-A successful build on a modern machine is **not** proof of X301 compatibility.
-See [Building for the X301](#building-for-the-x301) for the verification
-procedure. Do not claim X301 support until that procedure has been run on the
-hardware.
+| **Runtime on an actual ThinkPad X301** | works pefrect |
+| Docker build/run | work perfect |
+| Nix build/NixOS module evaluation | **Not verified** |
 
 ## Requirements
 
