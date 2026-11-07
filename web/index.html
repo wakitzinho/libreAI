@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en" data-theme="mocha">
+<html lang="en" data-theme="graphite">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#1e1e2e">
+  <meta name="theme-color" content="#242428">
   <meta name="color-scheme" content="dark light">
   <meta name="description" content="libreAI — a lightweight, self-hosted AI chat interface.">
   <title>libreAI</title>
@@ -76,6 +76,8 @@
     </symbol>
   </svg>
 
+  <div id="mesh-gradient" class="mesh-gradient" aria-hidden="true"></div>
+
   <div id="app" class="app">
     <div id="backdrop" class="backdrop" hidden></div>
 
@@ -91,14 +93,8 @@
       </div>
 
       <div class="sidebar-actions">
-        <button id="new-chat" class="new-chat" type="button">
-          <svg class="icon" aria-hidden="true"><use href="#icon-plus"></use></svg>
-          <span>New chat</span>
-        </button>
-        <button id="new-project" class="icon-btn" type="button" aria-label="New project" title="New project">
-          <svg class="icon" aria-hidden="true"><use href="#icon-folder"></use></svg>
-          <svg class="icon icon-plus-badge" aria-hidden="true"><use href="#icon-plus"></use></svg>
-        </button>
+        <button id="new-chat" class="sidebar-action" type="button">New chat</button>
+        <button id="new-project" class="sidebar-action" type="button">New project</button>
       </div>
 
       <div class="sidebar-search">
@@ -133,23 +129,18 @@
     </aside>
 
     <main class="main">
-      <header class="topbar">
-        <button id="sidebar-open" class="icon-btn topbar-menu" type="button" aria-label="Open sidebar" title="Open sidebar">
+      <div class="tabbar">
+        <button id="sidebar-open" class="icon-btn tabbar-menu" type="button" aria-label="Toggle sidebar" title="Toggle sidebar">
           <svg class="icon" aria-hidden="true"><use href="#icon-menu"></use></svg>
         </button>
-        <div class="topbar-title">
-          <h1 id="chat-title">libreAI</h1>
-        </div>
-        <div class="topbar-actions">
-          <label class="sr-only" for="model-select">Model</label>
-          <select id="model-select" class="model-select" disabled>
-            <option value="">No models available</option>
-          </select>
-          <button id="chat-menu-button" class="icon-btn" type="button" aria-label="Chat options" title="Chat options" hidden>
-            <svg class="icon" aria-hidden="true"><use href="#icon-dots"></use></svg>
-          </button>
-        </div>
-      </header>
+        <div id="chat-tabs" class="chat-tabs" role="tablist" aria-label="Open chats"></div>
+        <button id="chat-new-tab" class="icon-btn tabbar-new" type="button" aria-label="New chat" title="New chat">
+          <svg class="icon" aria-hidden="true"><use href="#icon-plus"></use></svg>
+        </button>
+        <button id="chat-menu-button" class="icon-btn" type="button" aria-label="Chat options" title="Chat options" hidden>
+          <svg class="icon" aria-hidden="true"><use href="#icon-dots"></use></svg>
+        </button>
+      </div>
 
       <div id="provider-hint" class="provider-hint" hidden>
         <strong>No AI provider is ready.</strong>
@@ -161,26 +152,9 @@
         <div id="messages" class="messages" aria-live="polite" hidden></div>
 
         <div id="empty-state" class="empty-state">
-          <div class="empty-mark"><svg class="icon" aria-hidden="true"><use href="#icon-spark"></use></svg></div>
-          <h2>What can I help with?</h2>
-          <p>Ask a question, sketch an idea, or debug something. Conversations are stored on your server and deleted after <span id="empty-retention-note">30</span> days of inactivity.</p>
-          <div class="suggestions">
-            <button type="button" class="suggestion" data-suggestion="Explain how SQLite WAL mode works, and when I should not use it.">
-              <span class="suggestion-title">Explain a database</span>
-              <span class="suggestion-text">How SQLite WAL mode works and when not to use it</span>
-            </button>
-            <button type="button" class="suggestion" data-suggestion="Help me write a hardened systemd unit for a small Go HTTP service running as an unprivileged user.">
-              <span class="suggestion-title">Write a systemd unit</span>
-              <span class="suggestion-text">Harden a small Go service with systemd</span>
-            </button>
-            <button type="button" class="suggestion" data-suggestion="Review this Go function for race conditions and suggest a minimal fix:\n\nfunc (s *Server) active(id string) bool {\n    _, ok := s.active[id]\n    return ok\n}">
-              <span class="suggestion-title">Find a bug</span>
-              <span class="suggestion-text">Review a Go function for race conditions</span>
-            </button>
-            <button type="button" class="suggestion" data-suggestion="Draft a short, friendly email declining a meeting while keeping the relationship warm.">
-              <span class="suggestion-title">Draft an email</span>
-              <span class="suggestion-text">Decline a meeting politely</span>
-            </button>
+          <div class="empty-model">
+            <span class="empty-model-label">Current model</span>
+            <div id="empty-model-name" class="empty-model-name">No model selected</div>
           </div>
         </div>
       </section>
@@ -189,7 +163,10 @@
         <form id="composer-form" class="composer">
           <div id="composer-input" class="composer-input" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Message libreAI" data-placeholder="Message libreAI…" spellcheck="true"></div>
           <div class="composer-bar">
-            <span class="composer-hint">Enter to send · Shift + Enter for a new line</span>
+            <label class="sr-only" for="model-select">Model</label>
+            <select id="model-select" class="model-select" disabled>
+              <option value="">No models available</option>
+            </select>
             <button id="web-search-toggle" class="search-toggle" type="button" aria-pressed="false" aria-label="Search the web for this message" title="Search the web for this message" hidden>
               <svg class="icon" aria-hidden="true"><use href="#icon-globe"></use></svg>
               <span>Search</span>
@@ -197,9 +174,9 @@
             <button id="send-button" class="send-button" type="submit" aria-label="Send message" title="Send message" disabled>
               <svg class="icon" aria-hidden="true"><use href="#icon-send"></use></svg>
             </button>
-            <button id="stop-button" class="send-button stop-button" type="button" hidden>
-              <svg class="icon" aria-hidden="true"><use href="#icon-stop"></use></svg>
-              <span>Stop</span>
+            <button id="stop-button" class="send-button stop-button" type="button" aria-label="Stop generating" title="Stop generating" hidden>
+              <span class="spinner" aria-hidden="true"></span>
+              <span class="sr-only">Stop generating</span>
             </button>
           </div>
         </form>
@@ -247,11 +224,57 @@
 
       <section class="settings-section">
         <h3>Appearance</h3>
-        <p class="settings-help">Choose a Catppuccin theme. System follows your operating system preference.</p>
+        <p class="settings-help">Pick a color scheme. Graphite is the default: a darker black sidebar with a gray main area. System follows your operating system preference.</p>
         <div class="theme-choices">
           <label class="theme-choice"><input type="radio" name="theme-choice" value="system"><span>System</span></label>
-          <label class="theme-choice"><input type="radio" name="theme-choice" value="dark"><span>Mocha (dark)</span></label>
-          <label class="theme-choice"><input type="radio" name="theme-choice" value="light"><span>Latte (light)</span></label>
+          <label class="theme-choice"><input type="radio" name="theme-choice" value="graphite"><span>Graphite (default)</span></label>
+          <label class="theme-choice"><input type="radio" name="theme-choice" value="mocha"><span>Catppuccin Mocha</span></label>
+          <label class="theme-choice"><input type="radio" name="theme-choice" value="latte"><span>Catppuccin Latte</span></label>
+        </div>
+      </section>
+
+      <section class="settings-section">
+        <h3>Mesh gradient</h3>
+        <p class="settings-help">
+          Design the gradient behind the whole app. Drag a point to move it, double-click the preview to add one,
+          or pick a premade gradient. Colors and gradients are saved in this browser.
+        </p>
+        <div class="mesh-editor">
+          <div id="mesh-preview" class="mesh-preview" role="application" aria-label="Mesh gradient editor">
+            <span class="mesh-preview-hint">Double-click to add a point</span>
+          </div>
+
+          <div class="mesh-controls">
+            <label class="field">
+              <span>Point color</span>
+              <input id="mesh-color" type="color" value="#89b4fa" aria-label="Selected point color">
+            </label>
+            <label class="field">
+              <span>Base color</span>
+              <input id="mesh-base" type="color" value="#141417" aria-label="Mesh base color">
+            </label>
+            <label class="field mesh-size-field">
+              <span>Point size <output id="mesh-size-value">60</output>%</span>
+              <input id="mesh-size" type="range" min="10" max="100" step="1" value="60">
+            </label>
+          </div>
+
+          <div class="mesh-group">
+            <span class="mesh-group-label">Premade colors</span>
+            <div id="mesh-palette" class="mesh-palette"></div>
+          </div>
+
+          <div class="mesh-group">
+            <span class="mesh-group-label">Premade gradients</span>
+            <div id="mesh-presets" class="mesh-presets"></div>
+          </div>
+
+          <div class="settings-inline mesh-actions">
+            <button id="mesh-add" class="btn secondary small" type="button">Add point</button>
+            <button id="mesh-remove" class="btn ghost small" type="button">Remove point</button>
+            <button id="mesh-reset" class="btn ghost small" type="button">Reset</button>
+            <span id="mesh-status" class="settings-status" role="status"></span>
+          </div>
         </div>
       </section>
 

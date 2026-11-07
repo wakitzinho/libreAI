@@ -64,14 +64,6 @@ export class ChatView {
     e.searchToggle.addEventListener('click', () => this.toggleWebSearch());
     e.modelSelect.addEventListener('change', () => this.modelChanged());
     e.messages.addEventListener('click', (event) => this.messageAction(event));
-    e.empty.addEventListener('click', (event) => {
-      const suggestion = event.target.closest('[data-suggestion]');
-      if (suggestion) {
-        this.composer.setValue(suggestion.dataset.suggestion, { caretAtEnd: true, focus: true });
-        autoGrow(e.input);
-        this.updateSendState();
-      }
-    });
     this.updateSendState();
   }
 
@@ -177,9 +169,7 @@ export class ChatView {
   }
 
   updateTitle() {
-    const title = this.chat ? this.chat.title : 'libreAI';
-    this.elements.title.textContent = title;
-    this.elements.title.title = title;
+    // Tab titles are rendered by the app shell from chat metadata.
   }
 
   focusComposer() {
@@ -224,7 +214,7 @@ export class ChatView {
     e.send.disabled = streaming || this.composer.value.trim() === '';
     e.stop.hidden = !streaming;
     e.stop.disabled = false;
-    e.stop.textContent = 'Stop';
+    e.stop.classList.remove('stopping');
     e.modelSelect.disabled = streaming;
     e.messages.setAttribute('aria-busy', streaming ? 'true' : 'false');
     e.form.classList.toggle('streaming', streaming);
@@ -292,6 +282,18 @@ export class ChatView {
         select.value = JSON.stringify([previous.providerId, previous.modelId]);
       }
     }
+    this.updateEmptyModel();
+  }
+
+  updateEmptyModel() {
+    const element = this.elements.emptyModelName;
+    if (!element) return;
+    const { providerId, modelId } = this.selected;
+    const provider = this.providers.find((item) => item.id === providerId);
+    const model = provider ? (provider.models || []).find((item) => item.id === modelId) : null;
+    const name = model ? (model.name || model.id) : '';
+    element.textContent = name || modelId || 'No model selected';
+    element.title = name && provider ? provider.name + ' — ' + name : '';
   }
 
   async modelChanged() {
@@ -306,7 +308,10 @@ export class ChatView {
     const next = { providerId: String(value[0]), modelId: String(value[1]) };
     const previous = { ...this.selected };
     this.selected = next;
-    if (!this.chat) return;
+    if (!this.chat) {
+      this.updateEmptyModel();
+      return;
+    }
     if (this.chat.provider_id === next.providerId && this.chat.model_id === next.modelId) return;
     try {
       const result = await this.api.patchChat(this.chat.id, {
@@ -556,7 +561,7 @@ export class ChatView {
     this.stream.stoppedByUser = true;
     try { this.stream.controller.abort(); } catch { /* already closed */ }
     this.elements.stop.disabled = true;
-    this.elements.stop.textContent = 'Stopping…';
+    this.elements.stop.classList.add('stopping');
   }
 
   scheduleAssistantUpdate(assistant, seq) {

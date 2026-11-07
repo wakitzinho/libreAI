@@ -3,10 +3,12 @@
 import { api } from './api.js';
 import { ChatView } from './chat.js';
 import { Sidebar } from './sidebar.js';
-import { $, confirmDialog, downloadURL, openMenu, promptDialog, showToast } from './ui.js';
+import { $, confirmDialog, downloadURL, icon, openMenu, promptDialog, showToast } from './ui.js';
 
 const THEME_KEY = 'libreai-theme';
 const SIDEBAR_KEY = 'libreai-sidebar-collapsed';
+const TABS_KEY = 'libreai-open-tabs';
+const MESH_KEY = 'libreai-mesh';
 
 const state = {
   version: 'dev',
@@ -17,6 +19,8 @@ const state = {
   defaults: { providerId: '', modelId: '' },
   hidden: new Set(),
   currentChat: null,
+  openTabs: [],
+  activeTab: null,
 };
 
 const els = {
@@ -33,19 +37,20 @@ const els = {
   chatEmpty: $('#chat-empty'),
   settingsButton: $('#sidebar-settings'),
   themeButton: $('#theme-toggle'),
-  title: $('#chat-title'),
+  chatTabs: $('#chat-tabs'),
+  newTabButton: $('#chat-new-tab'),
   chatMenuButton: $('#chat-menu-button'),
   modelSelect: $('#model-select'),
   conversation: $('#conversation'),
   messages: $('#messages'),
   empty: $('#empty-state'),
+  emptyModelName: $('#empty-model-name'),
   providerHint: $('#provider-hint'),
   composerForm: $('#composer-form'),
   composer: $('#composer-input'),
   send: $('#send-button'),
   stop: $('#stop-button'),
   searchToggle: $('#web-search-toggle'),
-  emptyRetentionNote: $('#empty-retention-note'),
   bootError: $('#boot-error'),
   bootErrorMessage: $('#boot-error-message'),
   retryBoot: $('#retry-boot'),
@@ -70,6 +75,18 @@ const els = {
   moveForm: $('#move-form'),
   moveTitle: $('#move-chat-title'),
   moveProject: $('#move-project'),
+  meshBackground: $('#mesh-gradient'),
+  meshPreview: $('#mesh-preview'),
+  meshColor: $('#mesh-color'),
+  meshBase: $('#mesh-base'),
+  meshSize: $('#mesh-size'),
+  meshSizeValue: $('#mesh-size-value'),
+  meshPalette: $('#mesh-palette'),
+  meshPresets: $('#mesh-presets'),
+  meshAdd: $('#mesh-add'),
+  meshRemove: $('#mesh-remove'),
+  meshReset: $('#mesh-reset'),
+  meshStatus: $('#mesh-status'),
 };
 
 const chatView = new ChatView(
@@ -77,13 +94,13 @@ const chatView = new ChatView(
     conversation: els.conversation,
     messages: els.messages,
     empty: els.empty,
+    emptyModelName: els.emptyModelName,
     form: els.composerForm,
     input: els.composer,
     send: els.send,
     stop: els.stop,
     searchToggle: els.searchToggle,
     modelSelect: els.modelSelect,
-    title: els.title,
   },
   {
     api,
@@ -120,11 +137,6 @@ const sidebar = new Sidebar(
 let settingsRendered = false;
 const mobileQuery = window.matchMedia('(max-width: 820px)');
 
-initTheme();
-wireUI();
-restoreSidebar();
-boot();
-
 // ---------------------------------------------------------------------------
 // Bootstrap and navigation
 
@@ -133,7 +145,7 @@ async function boot() {
   try {
     const data = await api.bootstrap();
     applyBootstrap(data);
-    await routeFromLocation(false);
+    await restoreTabs();
     kickModelDiscovery();
   } catch (error) {
     showBootError(error);
@@ -151,7 +163,6 @@ function applyBootstrap(data) {
     modelId: data.defaults?.model_id || '',
   };
   state.hidden = new Set(data.hidden_models || []);
-  els.emptyRetentionNote.textContent = String(state.retentionDays);
   els.settingsRetention.textContent = String(state.retentionDays);
   els.appVersion.textContent = state.version;
   els.providerHint.hidden = hasUsableProvider();
@@ -179,17 +190,138 @@ function kickModelDiscovery() {
   }, 1800);
 }
 
+async function restoreTabs() {
+  const stored = loadOpenTabs();
+  const known = new Set(state.chats.map((chat) => chat.id));
+  state.openTabs = Array.from(new Set(stored.tabs.filter((id) => known.has(id))));
+  let active = stored.active && state.openTabs.includes(stored.active) ? stored.active : null;
+  if (!active && state.openTabs.length) active = state.openTabs[state.openTabs.length - 1];
+
+  const hashId = chatIDFromHash();
+  if (hashId && known.has(hashId)) {
+    if (!state.openTabs.includes(hashId)) state.openTabs.push(hashId);
+    active = hashId;
+  } else if (location.hash) {
+    history.replaceState(null, '', location.pathname + location.search);
+  }
+
+  state.activeTab = active;
+  renderTabs();
+  saveTabs();
+  if (active) {
+    await openChat(active, { push: false });
+    history.replaceState({ chat: active }, '', '#chat=' + active);
+  } else {
+    showEmpty();
+  }
+}
+
+function loadOpenTabs() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(TABS_KEY) || 'null');
+    if (raw && Array.isArray(raw.tabs)) {
+      return {
+        tabs: raw.tabs.filter((id) => typeof id === 'string'),
+        active: typeof raw.active === 'string' ? raw.active : null,
+      };
+    }
+  } catch {
+    // Ignore storage errors; tabs can start empty.
+  }
+  return { tabs: [], active: null };
+}
+
+function saveTabs() {
+  try {
+    localStorage.setItem(TABS_KEY, JSON.stringify({ tabs: state.openTabs, active: state.activeTab }));
+  } catch {
+    // Tab persistence is cosmetic.
+  }
+}
+
+function renderTabs() {
+  const fragment = document.createDocumentFragment();
+  for (const id of state.openTabs) {
+    const chat = state.chats.find((item) => item.id === id);
+    if (!chat) continue;
+    const tab = document.createElement('div');
+    tab.className = 'chat-tab' + (id === state.activeTab ? ' active' : '');
+    tab.setAttribute('role', 'presentation');
+
+    const label = document.createElement('button');
+    label.type = 'button';
+    label.className = 'chat-tab-label';
+    label.dataset.chatTab = id;
+    label.setAttribute('role', 'tab');
+    label.setAttribute('aria-selected', id === state.activeTab ? 'true' : 'false');
+    label.title = chat.title;
+    label.textContent = chat.title;
+
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'chat-tab-close';
+    close.dataset.chatTabClose = id;
+    close.setAttribute('aria-label', 'Close ' + chat.title);
+    close.appendChild(icon('close'));
+
+    tab.append(label, close);
+    fragment.appendChild(tab);
+  }
+  els.chatTabs.replaceChildren(fragment);
+}
+
+async function closeTab(id) {
+  const index = state.openTabs.indexOf(id);
+  if (index === -1) return;
+  const wasActive = state.activeTab === id || state.currentChat?.id === id;
+  state.openTabs.splice(index, 1);
+
+  if (wasActive) {
+    if (state.currentChat?.id === id) {
+      state.currentChat = null;
+      chatView.clear();
+      sidebar.setActive(null);
+      els.chatMenuButton.hidden = true;
+    }
+    state.activeTab = null;
+    const next = state.openTabs[index] || state.openTabs[index - 1] || null;
+    if (next) {
+      await openChat(next, { push: false });
+      history.replaceState({ chat: next }, '', '#chat=' + next);
+    } else {
+      renderTabs();
+      saveTabs();
+      showEmpty();
+      history.replaceState(null, '', location.pathname + location.search);
+    }
+  } else {
+    if (!state.activeTab || !state.openTabs.includes(state.activeTab)) {
+      state.activeTab = state.openTabs[0] || null;
+    }
+    renderTabs();
+    saveTabs();
+  }
+}
+
 async function routeFromLocation(push) {
   const id = chatIDFromHash();
+  const activeTab = () => {
+    if (state.activeTab && state.openTabs.includes(state.activeTab)) return state.activeTab;
+    return state.openTabs[state.openTabs.length - 1] || null;
+  };
   if (!id) {
     if (location.hash) history.replaceState(null, '', location.pathname + location.search);
-    showEmpty();
+    const fallback = activeTab();
+    if (fallback) await openChat(fallback, { push: false });
+    else showEmpty();
     return;
   }
   const known = state.chats.some((chat) => chat.id === id);
   if (!known) {
     history.replaceState(null, '', location.pathname + location.search);
-    showEmpty();
+    const fallback = activeTab();
+    if (fallback) await openChat(fallback, { push: false });
+    else showEmpty();
     return;
   }
   await openChat(id, { push });
@@ -201,6 +333,10 @@ function chatIDFromHash() {
 }
 
 async function openChat(id, { push = true } = {}) {
+  if (!state.openTabs.includes(id)) state.openTabs.push(id);
+  state.activeTab = id;
+  renderTabs();
+  saveTabs();
   if (state.currentChat && state.currentChat.id === id) {
     closeSidebarAfterNavigation();
     return;
@@ -219,9 +355,26 @@ async function openChat(id, { push = true } = {}) {
     if (error.status === 404) {
       state.chats = state.chats.filter((chat) => chat.id !== id);
       sidebar.setData(state.projects, state.chats);
+      const index = state.openTabs.indexOf(id);
+      if (index !== -1) state.openTabs.splice(index, 1);
+      if (state.currentChat?.id === id) {
+        state.currentChat = null;
+        chatView.clear();
+        sidebar.setActive(null);
+        els.chatMenuButton.hidden = true;
+      }
+      if (state.activeTab === id) state.activeTab = null;
+      const next = state.openTabs[index] || state.openTabs[index - 1] || null;
+      if (next) {
+        await openChat(next, { push: false });
+        history.replaceState({ chat: next }, '', '#chat=' + next);
+      } else {
+        renderTabs();
+        saveTabs();
+        showEmpty();
+        history.replaceState(null, '', location.pathname + location.search);
+      }
       showToast('That chat no longer exists.', 'error');
-      showEmpty();
-      history.replaceState(null, '', location.pathname + location.search);
       return;
     }
     showToast(error.message || 'Could not open chat.', 'error');
@@ -239,8 +392,12 @@ function showEmpty() {
 async function ensureChat() {
   if (state.currentChat) return state.currentChat;
   const chat = await createChatRecord(null);
+  if (!state.openTabs.includes(chat.id)) state.openTabs.push(chat.id);
+  state.activeTab = chat.id;
   state.currentChat = chat;
   chatView.adoptChat(chat);
+  renderTabs();
+  saveTabs();
   history.pushState({ chat: chat.id }, '', '#chat=' + chat.id);
   els.chatMenuButton.hidden = false;
   updateDocumentTitle();
@@ -255,8 +412,12 @@ async function newChat(projectId = null) {
   }
   try {
     const chat = await createChatRecord(projectId);
+    if (!state.openTabs.includes(chat.id)) state.openTabs.push(chat.id);
+    state.activeTab = chat.id;
     state.currentChat = chat;
     chatView.setChat(chat, []);
+    renderTabs();
+    saveTabs();
     history.pushState({ chat: chat.id }, '', '#chat=' + chat.id);
     sidebar.setActive(chat.id);
     els.chatMenuButton.hidden = false;
@@ -288,6 +449,8 @@ function upsertChat(chat) {
   else state.chats[index] = { ...state.chats[index], ...chat };
   state.chats.sort((a, b) => new Date(b.last_activity_at) - new Date(a.last_activity_at));
   if (state.currentChat && state.currentChat.id === chat.id) state.currentChat = chat;
+  renderTabs();
+  saveTabs();
 }
 
 function handleChatMeta(chat) {
@@ -377,7 +540,15 @@ async function deleteChat(chat) {
     await api.deleteChat(chat.id);
     state.chats = state.chats.filter((item) => item.id !== chat.id);
     sidebar.setData(state.projects, state.chats);
-    if (state.currentChat?.id === chat.id) {
+    if (state.openTabs.includes(chat.id)) {
+      if (state.currentChat?.id === chat.id) {
+        state.currentChat = null;
+        chatView.clear();
+        sidebar.setActive(null);
+        els.chatMenuButton.hidden = true;
+      }
+      await closeTab(chat.id);
+    } else if (state.currentChat?.id === chat.id) {
       showEmpty();
       history.replaceState(null, '', location.pathname + location.search);
     }
@@ -513,6 +684,7 @@ function showCurrentChatMenu(anchor) {
 
 function openSettings() {
   renderSettingsContent();
+  renderMeshEditor();
   settingsRendered = true;
   if (els.settingsDialog.open) {
     els.envEditor.focus();
@@ -602,7 +774,7 @@ function renderSettingsContent() {
     els.defaultProvider.appendChild(option);
   }
   els.defaultProvider.value = state.defaults.providerId || '';
-  renderDefaultModels(state.defaultProvider.value, state.defaults.modelId);
+  renderDefaultModels(els.defaultProvider.value, state.defaults.modelId);
 
   // Model visibility.
   els.modelVisibility.replaceChildren();
@@ -778,29 +950,40 @@ async function refreshModels({ quiet = false } = {}) {
 
 function themePreference() {
   try {
-    const value = localStorage.getItem(THEME_KEY);
-    if (value === 'dark' || value === 'light' || value === 'system') return value;
+    let value = localStorage.getItem(THEME_KEY);
+    if (value === 'dark') value = 'graphite';
+    if (value === 'light') value = 'latte';
+    if (value === 'system' || value === 'graphite' || value === 'mocha' || value === 'latte') return value;
   } catch {
     // Ignore storage errors.
   }
-  return 'system';
+  return 'graphite';
 }
 
 function resolvedTheme(preference) {
-  if (preference === 'dark' || preference === 'light') return preference;
-  return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  if (preference === 'system') {
+    return window.matchMedia('(prefers-color-scheme: light)').matches ? 'latte' : 'graphite';
+  }
+  return preference === 'latte' || preference === 'mocha' ? preference : 'graphite';
+}
+
+function themeColor(theme) {
+  if (theme === 'latte') return '#eff1f5';
+  if (theme === 'mocha') return '#1e1e2e';
+  return '#242428';
 }
 
 function applyTheme(preference, { persist = true } = {}) {
   const resolved = resolvedTheme(preference);
-  document.documentElement.dataset.theme = resolved === 'light' ? 'latte' : 'mocha';
+  const light = resolved === 'latte';
+  document.documentElement.dataset.theme = resolved;
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute('content', resolved === 'light' ? '#eff1f5' : '#1e1e2e');
+  if (meta) meta.setAttribute('content', themeColor(resolved));
   const use = els.themeButton?.querySelector('use');
-  if (use) use.setAttribute('href', resolved === 'light' ? '#icon-moon' : '#icon-sun');
+  if (use) use.setAttribute('href', light ? '#icon-moon' : '#icon-sun');
   if (els.themeButton) {
-    els.themeButton.setAttribute('aria-label', 'Switch to ' + (resolved === 'light' ? 'dark' : 'light') + ' theme');
-    els.themeButton.title = 'Switch to ' + (resolved === 'light' ? 'dark' : 'light') + ' theme';
+    els.themeButton.setAttribute('aria-label', 'Switch to ' + (light ? 'dark' : 'light') + ' theme');
+    els.themeButton.title = 'Switch to ' + (light ? 'dark' : 'light') + ' theme';
   }
   for (const radio of els.themeChoices) radio.checked = radio.value === preference;
   if (persist) {
@@ -819,10 +1002,463 @@ function initTheme() {
 
 function toggleTheme() {
   const current = resolvedTheme(themePreference());
-  applyTheme(current === 'dark' ? 'light' : 'dark');
+  applyTheme(current === 'latte' ? 'graphite' : 'latte');
   if (settingsRendered) {
     for (const radio of els.themeChoices) radio.checked = radio.value === themePreference();
   }
+}
+
+// ---------------------------------------------------------------------------
+// Mesh gradient
+
+const DEFAULT_MESH = {
+  base: '#141417',
+  points: [
+    { x: 16, y: 18, color: '#2c2c33', size: 68 },
+    { x: 84, y: 14, color: '#1f2126', size: 62 },
+    { x: 48, y: 88, color: '#26262c', size: 76 },
+    { x: 88, y: 80, color: '#2b2433', size: 58 },
+  ],
+};
+
+const MESH_NEW_COLORS = ['#89b4fa', '#f5c2e7', '#94e2d5', '#f9e2af', '#cba6f7', '#a6e3a1'];
+
+const MESH_PALETTE = [
+  { name: 'Mocha base', color: '#1e1e2e' },
+  { name: 'Mocha surface', color: '#313244' },
+  { name: 'Mocha overlay', color: '#45475a' },
+  { name: 'Mocha text', color: '#cdd6f4' },
+  { name: 'Mocha pink', color: '#f5c2e7' },
+  { name: 'Mocha red', color: '#f38ba8' },
+  { name: 'Mocha peach', color: '#fab387' },
+  { name: 'Mocha yellow', color: '#f9e2af' },
+  { name: 'Mocha green', color: '#a6e3a1' },
+  { name: 'Mocha teal', color: '#94e2d5' },
+  { name: 'Mocha blue', color: '#89b4fa' },
+  { name: 'Mocha mauve', color: '#cba6f7' },
+  { name: 'Latte base', color: '#eff1f5' },
+  { name: 'Latte surface', color: '#ccd0da' },
+  { name: 'Latte text', color: '#4c4f69' },
+  { name: 'Latte pink', color: '#ea76cb' },
+  { name: 'Latte red', color: '#d20f39' },
+  { name: 'Latte peach', color: '#fe640b' },
+  { name: 'Latte yellow', color: '#df8e1d' },
+  { name: 'Latte green', color: '#40a02b' },
+  { name: 'Latte teal', color: '#179299' },
+  { name: 'Latte blue', color: '#1e66f5' },
+  { name: 'Latte mauve', color: '#8839ef' },
+  { name: 'Ink', color: '#0b0b0d' },
+  { name: 'Graphite', color: '#242428' },
+  { name: 'Slate', color: '#3d3d46' },
+  { name: 'Paper', color: '#e5e5eb' },
+];
+
+const MESH_PRESETS = [
+  {
+    name: 'Graphite',
+    base: '#141417',
+    points: [
+      { x: 16, y: 18, color: '#2c2c33', size: 68 },
+      { x: 84, y: 14, color: '#1f2126', size: 62 },
+      { x: 48, y: 88, color: '#26262c', size: 76 },
+      { x: 88, y: 80, color: '#2b2433', size: 58 },
+    ],
+  },
+  {
+    name: 'Catppuccin Mocha',
+    base: '#11111b',
+    points: [
+      { x: 12, y: 20, color: '#1e1e2e', size: 72 },
+      { x: 84, y: 16, color: '#45475a', size: 60 },
+      { x: 22, y: 86, color: '#313244', size: 70 },
+      { x: 86, y: 82, color: '#cba6f7', size: 54 },
+    ],
+  },
+  {
+    name: 'Catppuccin Latte',
+    base: '#eff1f5',
+    points: [
+      { x: 14, y: 16, color: '#dce0e8', size: 70 },
+      { x: 86, y: 20, color: '#ccd0da', size: 62 },
+      { x: 70, y: 86, color: '#bcc0cc', size: 72 },
+      { x: 18, y: 84, color: '#e6e9ef', size: 60 },
+    ],
+  },
+  {
+    name: 'Aurora',
+    base: '#0b1020',
+    points: [
+      { x: 15, y: 20, color: '#1e3a8a', size: 66 },
+      { x: 85, y: 18, color: '#7c3aed', size: 60 },
+      { x: 20, y: 85, color: '#0f766e', size: 70 },
+      { x: 82, y: 82, color: '#be185d', size: 58 },
+    ],
+  },
+  {
+    name: 'Sunset',
+    base: '#1b1020',
+    points: [
+      { x: 18, y: 22, color: '#7c2d12', size: 68 },
+      { x: 80, y: 16, color: '#be123c', size: 60 },
+      { x: 45, y: 88, color: '#c2410c', size: 74 },
+      { x: 86, y: 78, color: '#f59e0b', size: 52 },
+    ],
+  },
+  {
+    name: 'Ocean',
+    base: '#06131f',
+    points: [
+      { x: 16, y: 20, color: '#0c4a6e', size: 70 },
+      { x: 84, y: 16, color: '#0e7490', size: 62 },
+      { x: 40, y: 88, color: '#1e3a8a', size: 76 },
+      { x: 88, y: 80, color: '#164e63', size: 58 },
+    ],
+  },
+  {
+    name: 'Candy',
+    base: '#1a1025',
+    points: [
+      { x: 18, y: 18, color: '#be185d', size: 64 },
+      { x: 82, y: 18, color: '#7e22ce', size: 60 },
+      { x: 30, y: 86, color: '#db2777', size: 70 },
+      { x: 82, y: 82, color: '#2563eb', size: 58 },
+    ],
+  },
+  {
+    name: 'Forest',
+    base: '#0a140f',
+    points: [
+      { x: 16, y: 20, color: '#14532d', size: 70 },
+      { x: 84, y: 16, color: '#166534', size: 60 },
+      { x: 45, y: 88, color: '#365314', size: 74 },
+      { x: 86, y: 80, color: '#0f766e', size: 58 },
+    ],
+  },
+];
+
+let meshState = cloneMesh(DEFAULT_MESH);
+let meshSelected = 0;
+let meshDrag = null;
+
+function cloneMesh(mesh) {
+  return { base: mesh.base, points: mesh.points.map((point) => ({ ...point })) };
+}
+
+function clampNumber(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function normalizeColor(value, fallback) {
+  return /^#[0-9a-f]{6}$/i.test(String(value || '')) ? String(value).toLowerCase() : fallback;
+}
+
+function isLightColor(value) {
+  const color = normalizeColor(value, '');
+  if (!color) return false;
+  const r = parseInt(color.slice(1, 3), 16);
+  const g = parseInt(color.slice(3, 5), 16);
+  const b = parseInt(color.slice(5, 7), 16);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 160;
+}
+
+function normalizeMesh(raw) {
+  const source = raw && typeof raw === 'object' ? raw : {};
+  const base = normalizeColor(source.base, DEFAULT_MESH.base);
+  const points = Array.isArray(source.points)
+    ? source.points.slice(0, 12).map((point) => {
+      if (!point || typeof point !== 'object') return null;
+      const x = Number(point.x);
+      const y = Number(point.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+      const size = Number(point.size);
+      return {
+        x: clampNumber(x, 0, 100),
+        y: clampNumber(y, 0, 100),
+        color: normalizeColor(point.color, '#89b4fa'),
+        size: clampNumber(Number.isFinite(size) ? size : 60, 10, 100),
+      };
+    }).filter(Boolean)
+    : [];
+  if (!points.length) return cloneMesh(DEFAULT_MESH);
+  return { base, points };
+}
+
+function loadMesh() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(MESH_KEY) || 'null');
+    if (raw) return normalizeMesh(raw);
+  } catch {
+    // Ignore storage errors and use the default gradient.
+  }
+  return cloneMesh(DEFAULT_MESH);
+}
+
+function saveMesh() {
+  try {
+    localStorage.setItem(MESH_KEY, JSON.stringify(meshState));
+  } catch {
+    // Cosmetic preference only.
+  }
+}
+
+function rgba(hex, alpha) {
+  const match = /^#([0-9a-f]{6})$/i.exec(hex);
+  if (!match) return 'rgba(0, 0, 0, ' + alpha + ')';
+  const value = parseInt(match[1], 16);
+  return 'rgba(' + ((value >> 16) & 255) + ', ' + ((value >> 8) & 255) + ', ' + (value & 255) + ', ' + alpha + ')';
+}
+
+function meshCSS(mesh) {
+  const layers = mesh.points.map((point) => {
+    const x = Math.round(point.x * 10) / 10;
+    const y = Math.round(point.y * 10) / 10;
+    const size = Math.round(point.size * 10) / 10;
+    return 'radial-gradient(circle at ' + x + '% ' + y + '%, ' + point.color + ' 0%, ' + rgba(point.color, 0) + ' ' + size + '%)';
+  });
+  layers.push(mesh.base);
+  return layers.join(', ');
+}
+
+function applyMesh() {
+  if (els.meshBackground) els.meshBackground.style.background = meshCSS(meshState);
+}
+
+function initMesh() {
+  meshState = loadMesh();
+  meshSelected = 0;
+  applyMesh();
+}
+
+function selectedMeshPoint() {
+  return meshState.points[meshSelected] || null;
+}
+
+function selectMeshPoint(index) {
+  meshSelected = index;
+  els.meshPreview.querySelectorAll('.mesh-node').forEach((node) => {
+    node.classList.toggle('selected', Number(node.dataset.meshNode) === index);
+  });
+  updateMeshControls();
+}
+
+function renderMeshNodes() {
+  els.meshPreview.querySelectorAll('.mesh-node').forEach((node) => node.remove());
+  meshState.points.forEach((point, index) => {
+    const node = document.createElement('button');
+    node.type = 'button';
+    node.className = 'mesh-node' + (index === meshSelected ? ' selected' : '');
+    node.dataset.meshNode = String(index);
+    node.style.left = point.x + '%';
+    node.style.top = point.y + '%';
+    node.style.background = point.color;
+    node.title = 'Color point ' + (index + 1) + ' — drag to move';
+    node.setAttribute('aria-label', 'Color point ' + (index + 1));
+    els.meshPreview.appendChild(node);
+  });
+}
+
+function updateMeshControls() {
+  const point = selectedMeshPoint();
+  els.meshColor.value = point ? point.color : '#89b4fa';
+  els.meshColor.disabled = !point;
+  els.meshBase.value = meshState.base;
+  els.meshSize.value = String(Math.round(point ? point.size : 60));
+  els.meshSizeValue.textContent = String(Math.round(point ? point.size : 60));
+  els.meshSize.disabled = !point;
+  els.meshRemove.disabled = meshState.points.length <= 1;
+}
+
+function updatePresetSelection() {
+  const current = JSON.stringify(meshState);
+  els.meshPresets.querySelectorAll('[data-mesh-preset]').forEach((button) => {
+    const preset = MESH_PRESETS.find((item) => item.name === button.dataset.meshPreset);
+    button.classList.toggle('active', !!preset && JSON.stringify(normalizeMesh(preset)) === current);
+  });
+}
+
+function renderMeshEditor() {
+  els.meshPreview.style.background = meshCSS(meshState);
+  renderMeshNodes();
+  updateMeshControls();
+  updatePresetSelection();
+}
+
+function commitMesh() {
+  applyMesh();
+  if (els.meshPreview) els.meshPreview.style.background = meshCSS(meshState);
+  saveMesh();
+  renderMeshNodes();
+  updateMeshControls();
+  updatePresetSelection();
+  els.meshStatus.textContent = 'Saved locally.';
+}
+
+function applyPaletteColor(color) {
+  const point = selectedMeshPoint();
+  if (!point) return;
+  point.color = normalizeColor(color, '#89b4fa');
+  els.meshColor.value = point.color;
+  commitMesh();
+}
+
+function useMeshPreset(preset) {
+  meshState = cloneMesh(normalizeMesh(preset));
+  meshSelected = 0;
+  commitMesh();
+}
+
+function addMeshPoint(x, y) {
+  if (meshState.points.length >= 12) {
+    showToast('A mesh gradient can have up to 12 points.', 'info', 2500);
+    return;
+  }
+  meshState.points.push({
+    x: clampNumber(x, 0, 100),
+    y: clampNumber(y, 0, 100),
+    color: MESH_NEW_COLORS[meshState.points.length % MESH_NEW_COLORS.length],
+    size: 60,
+  });
+  meshSelected = meshState.points.length - 1;
+  commitMesh();
+}
+
+function removeMeshPoint() {
+  if (meshState.points.length <= 1) return;
+  meshState.points.splice(meshSelected, 1);
+  meshSelected = Math.min(meshSelected, meshState.points.length - 1);
+  commitMesh();
+}
+
+function resetMesh() {
+  meshState = cloneMesh(DEFAULT_MESH);
+  meshSelected = 0;
+  commitMesh();
+}
+
+function meshPointFromEvent(event) {
+  const rect = els.meshPreview.getBoundingClientRect();
+  if (!rect.width || !rect.height) return { x: 50, y: 50 };
+  return {
+    x: clampNumber(((event.clientX - rect.left) / rect.width) * 100, 0, 100),
+    y: clampNumber(((event.clientY - rect.top) / rect.height) * 100, 0, 100),
+  };
+}
+
+function onMeshDoubleClick(event) {
+  if (event.target.closest('.mesh-node')) return;
+  const point = meshPointFromEvent(event);
+  addMeshPoint(point.x, point.y);
+}
+
+function onMeshPointerDown(event) {
+  const node = event.target.closest('.mesh-node');
+  if (!node || event.button !== 0) return;
+  const index = Number(node.dataset.meshNode);
+  if (!Number.isInteger(index) || !meshState.points[index]) return;
+  selectMeshPoint(index);
+  meshDrag = { index, pointerId: event.pointerId };
+  try { node.setPointerCapture(event.pointerId); } catch { /* optional */ }
+  event.preventDefault();
+}
+
+function onMeshPointerMove(event) {
+  if (!meshDrag || event.pointerId !== meshDrag.pointerId) return;
+  const point = meshState.points[meshDrag.index];
+  if (!point) return;
+  const next = meshPointFromEvent(event);
+  point.x = next.x;
+  point.y = next.y;
+  const node = els.meshPreview.querySelector('[data-mesh-node="' + meshDrag.index + '"]');
+  if (node) {
+    node.style.left = point.x + '%';
+    node.style.top = point.y + '%';
+  }
+  applyMesh();
+}
+
+function endMeshDrag(event) {
+  if (!meshDrag || event.pointerId !== meshDrag.pointerId) return;
+  meshDrag = null;
+  saveMesh();
+  els.meshStatus.textContent = 'Saved locally.';
+}
+
+function onMeshKeyDown(event) {
+  const node = event.target.closest('.mesh-node');
+  if (!node) return;
+  const index = Number(node.dataset.meshNode);
+  const point = meshState.points[index];
+  if (!point) return;
+  const step = event.shiftKey ? 10 : 1;
+  let handled = true;
+  if (event.key === 'ArrowLeft') point.x = clampNumber(point.x - step, 0, 100);
+  else if (event.key === 'ArrowRight') point.x = clampNumber(point.x + step, 0, 100);
+  else if (event.key === 'ArrowUp') point.y = clampNumber(point.y - step, 0, 100);
+  else if (event.key === 'ArrowDown') point.y = clampNumber(point.y + step, 0, 100);
+  else handled = false;
+  if (!handled) return;
+  event.preventDefault();
+  node.style.left = point.x + '%';
+  node.style.top = point.y + '%';
+  applyMesh();
+  saveMesh();
+  els.meshStatus.textContent = 'Saved locally.';
+}
+
+function initMeshEditor() {
+  const paletteFragment = document.createDocumentFragment();
+  for (const item of MESH_PALETTE) {
+    const swatch = document.createElement('button');
+    swatch.type = 'button';
+    swatch.className = 'mesh-swatch';
+    swatch.style.background = item.color;
+    swatch.title = item.name + ' ' + item.color;
+    swatch.setAttribute('aria-label', 'Use ' + item.name);
+    swatch.addEventListener('click', () => applyPaletteColor(item.color));
+    paletteFragment.appendChild(swatch);
+  }
+  els.meshPalette.replaceChildren(paletteFragment);
+
+  const presetFragment = document.createDocumentFragment();
+  for (const preset of MESH_PRESETS) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'mesh-preset' + (isLightColor(preset.base) ? ' light' : '');
+    button.dataset.meshPreset = preset.name;
+    button.style.background = meshCSS(normalizeMesh(preset));
+    button.textContent = preset.name;
+    button.addEventListener('click', () => useMeshPreset(preset));
+    presetFragment.appendChild(button);
+  }
+  els.meshPresets.replaceChildren(presetFragment);
+
+  els.meshColor.addEventListener('input', () => {
+    const point = selectedMeshPoint();
+    if (!point) return;
+    point.color = normalizeColor(els.meshColor.value, '#89b4fa');
+    commitMesh();
+  });
+  els.meshBase.addEventListener('input', () => {
+    meshState.base = normalizeColor(els.meshBase.value, DEFAULT_MESH.base);
+    commitMesh();
+  });
+  els.meshSize.addEventListener('input', () => {
+    const point = selectedMeshPoint();
+    if (!point) return;
+    point.size = clampNumber(Number(els.meshSize.value), 10, 100);
+    els.meshSizeValue.textContent = String(Math.round(point.size));
+    commitMesh();
+  });
+  els.meshAdd.addEventListener('click', () => addMeshPoint(50, 50));
+  els.meshRemove.addEventListener('click', removeMeshPoint);
+  els.meshReset.addEventListener('click', resetMesh);
+  els.meshPreview.addEventListener('dblclick', onMeshDoubleClick);
+  els.meshPreview.addEventListener('pointerdown', onMeshPointerDown);
+  els.meshPreview.addEventListener('pointermove', onMeshPointerMove);
+  els.meshPreview.addEventListener('pointerup', endMeshDrag);
+  els.meshPreview.addEventListener('pointercancel', endMeshDrag);
+  els.meshPreview.addEventListener('keydown', onMeshKeyDown);
+  renderMeshEditor();
 }
 
 function isMobile() {
@@ -866,6 +1502,33 @@ function wireUI() {
   els.sidebarClose.addEventListener('click', () => setSidebarOpen(false));
   els.backdrop.addEventListener('click', () => setSidebarOpen(false));
   els.chatMenuButton.addEventListener('click', () => showCurrentChatMenu(els.chatMenuButton));
+  els.newTabButton.addEventListener('click', () => newChat(null));
+  els.chatTabs.addEventListener('click', (event) => {
+    const close = event.target.closest('[data-chat-tab-close]');
+    if (close) {
+      event.preventDefault();
+      closeTab(close.dataset.chatTabClose);
+      return;
+    }
+    const tab = event.target.closest('[data-chat-tab]');
+    if (tab) openChat(tab.dataset.chatTab);
+  });
+  els.chatTabs.addEventListener('auxclick', (event) => {
+    if (event.button !== 1) return;
+    const tab = event.target.closest('[data-chat-tab]');
+    if (tab) {
+      event.preventDefault();
+      closeTab(tab.dataset.chatTab);
+    }
+  });
+  els.chatTabs.addEventListener('contextmenu', (event) => {
+    const tab = event.target.closest('[data-chat-tab]');
+    if (!tab) return;
+    const chat = state.chats.find((item) => item.id === tab.dataset.chatTab);
+    if (!chat) return;
+    event.preventDefault();
+    showChatMenu(chat, tab);
+  });
   els.retryBoot.addEventListener('click', () => boot());
 
   els.saveSettings.addEventListener('click', saveSettings);
@@ -895,4 +1558,12 @@ function wireUI() {
     els.backdrop.hidden = true;
     if (isMobile()) els.app.classList.remove('collapsed');
   });
+
+  initMeshEditor();
 }
+
+initTheme();
+initMesh();
+wireUI();
+restoreSidebar();
+boot();
