@@ -1054,30 +1054,16 @@ code {
   text-align: center;
 }
 
-.empty-model {
+.main.is-empty .conversation {
+  display: none;
+}
+
+.main.is-empty .composer-wrap {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  max-width: min(720px, 90%);
-}
-
-.empty-model-label {
-  color: var(--overlay1);
-  font-size: 11px;
-  font-weight: 650;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
-
-.empty-model-name {
-  color: var(--text);
-  font-size: clamp(24px, 4vw, 38px);
-  font-weight: 650;
-  letter-spacing: -0.025em;
-  line-height: 1.2;
-  overflow-wrap: anywhere;
-  text-wrap: balance;
+  justify-content: center;
+  background: none;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -1450,6 +1436,7 @@ code {
 
 .composer-bar .model-select {
   margin-right: auto;
+  border-color: rgba(0, 0, 0, 0.28);
 }
 
 .send-button {

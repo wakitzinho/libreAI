@@ -282,18 +282,6 @@ export class ChatView {
         select.value = JSON.stringify([previous.providerId, previous.modelId]);
       }
     }
-    this.updateEmptyModel();
-  }
-
-  updateEmptyModel() {
-    const element = this.elements.emptyModelName;
-    if (!element) return;
-    const { providerId, modelId } = this.selected;
-    const provider = this.providers.find((item) => item.id === providerId);
-    const model = provider ? (provider.models || []).find((item) => item.id === modelId) : null;
-    const name = model ? (model.name || model.id) : '';
-    element.textContent = name || modelId || 'No model selected';
-    element.title = name && provider ? provider.name + ' — ' + name : '';
   }
 
   async modelChanged() {
@@ -308,10 +296,7 @@ export class ChatView {
     const next = { providerId: String(value[0]), modelId: String(value[1]) };
     const previous = { ...this.selected };
     this.selected = next;
-    if (!this.chat) {
-      this.updateEmptyModel();
-      return;
-    }
+    if (!this.chat) return;
     if (this.chat.provider_id === next.providerId && this.chat.model_id === next.modelId) return;
     try {
       const result = await this.api.patchChat(this.chat.id, {
@@ -599,6 +584,7 @@ export class ChatView {
     const empty = this.messages.length === 0;
     this.elements.empty.hidden = !empty;
     this.elements.messages.hidden = empty;
+    if (this.elements.main) this.elements.main.classList.toggle('is-empty', empty);
     if (near) this.scrollToBottom();
   }
 
